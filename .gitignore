@@ -1,0 +1,14 @@
+.gradle/
+**/build/
+android-client/.android-sdk/
+local.properties
+**/local.properties
+keystore.properties
+**/keystore.properties
+*.jks
+*.keystore
+*.iml
+.idea/
+.DS_Store
+data/
+*.mv.db

@@ -1,0 +1,289 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Time Capsule 2.0</string>
+
+    <!-- Navigation & TopBar -->
+    <string name="nav_home">Главная</string>
+    <string name="nav_capsules">Капсулы</string>
+    <string name="nav_create">Создать</string>
+    <string name="nav_ideas">Идеи</string>
+    <string name="nav_settings">Настройки</string>
+    <string name="nav_radar">Радар</string>
+    <string name="nav_my_capsules">Капсулы</string>
+    <string name="demo_mode_label">ДЕМО</string>
+    <string name="settings_content_desc">Настройки сети</string>
+    <string name="profile_chip_format">%1$s</string>
+    <string name="profile_select_prompt">Профиль</string>
+
+    <!-- Login Screen -->
+    <string name="login_title">Time Capsule 2.0</string>
+    <string name="login_subtitle">Гео-синхронизированные капсулы времени с шифрованием AES-256-GCM</string>
+    <string name="btn_sign_in_google">Войти через Google</string>
+    <string name="btn_demo_login_section">Демо-вход (Maga / Zainab)</string>
+    <string name="btn_demo_login_maga">Демо-вход: Maga (user_maga)</string>
+    <string name="btn_demo_login_zainab">Демо-вход: Zainab (user_zainab)</string>
+    <string name="demo_login_hint">Запасной вариант для защиты проекта без интернета или Google-аккаунта</string>
+    <string name="auth_error_cancelled">Вход через Google отменён пользователем</string>
+    <string name="auth_error_no_account">На устройстве не найден аккаунт Google. Добавьте аккаунт в настройках или используйте демо-вход.</string>
+    <string name="auth_error_missing_client_id">Не задан GOOGLE_WEB_CLIENT_ID в local.properties. Используйте демо-вход или укажите Web Client ID.</string>
+    <string name="auth_error_invalid_token">Сессия истекла или токен недействителен (401). Пожалуйста, войдите снова.</string>
+    <string name="auth_error_network">Нет связи с сервером (%1$s). Проверьте URL сервера или используйте демо-режим.</string>
+    <string name="auth_error_generic">Ошибка авторизации Google: %1$s</string>
+    <string name="auth_demo_offline_notice">Сервер недоступен — выполнен автономный демо-вход (%1$s)</string>
+
+    <!-- Profile Dialog -->
+    <string name="profile_dialog_title">Профиль участника</string>
+    <string name="profile_email_format">Email: %1$s</string>
+    <string name="profile_id_format">ID: %1$s</string>
+    <string name="profile_switch_demo_title">Быстрое переключение (для защиты):</string>
+    <string name="btn_logout">Выйти</string>
+    <string name="logout_done">Вы вышли из аккаунта</string>
+    <string name="who_are_you_title">Кто вы?</string>
+    <string name="who_are_you_subtitle">Выберите профиль участника для синхронизации с гео-капсулой</string>
+    <string name="user_maga_name">Maga</string>
+    <string name="user_maga_id">user_maga</string>
+    <string name="user_maga_desc">ID: user_maga • Основатель капсулы</string>
+    <string name="user_zainab_name">Zainab</string>
+    <string name="user_zainab_id">user_zainab</string>
+    <string name="user_zainab_desc">ID: user_zainab • Соавтор капсулы</string>
+
+    <!-- Server Settings Dialog -->
+    <string name="server_settings_title">Настройки сервера</string>
+    <string name="server_url_label">Базовый URL (BASE_URL)</string>
+    <string name="server_url_hint">http://192.168.1.105:8080</string>
+    <string name="btn_check_connection">Проверить</string>
+    <string name="btn_save">Сохранить</string>
+    <string name="btn_cancel">Отмена</string>
+    <string name="btn_close">Закрыть</string>
+    <string name="btn_ok">Понятно</string>
+    <string name="health_checking">Проверка /health…</string>
+    <string name="health_ok">Сервер ответил: OK (200)</string>
+    <string name="health_error">Ошибка подключения: %1$s</string>
+    <string name="server_url_saved">URL сервера сохранён: %1$s</string>
+
+    <!-- Permissions -->
+    <string name="location_permission_required_title">Нужен доступ к геолокации</string>
+    <string name="location_permission_required_msg">Для определения расстояния до капсулы и автоматического чекина разрешите доступ к геолокации устройства.</string>
+    <string name="btn_grant_permission">Дать доступ</string>
+    <string name="location_fetch_error">Не удалось определить текущие координаты GPS</string>
+
+    <!-- My Capsules Screen -->
+    <string name="my_capsules_screen_title">Мои капсулы времени</string>
+    <string name="btn_join_by_code">Ввести код</string>
+    <string name="dialog_join_title">Присоединиться по коду</string>
+    <string name="dialog_join_subtitle">Введите 6-значный код приглашения, чтобы добавиться в капсулу друга</string>
+    <string name="dialog_join_input_label">Код приглашения (6 символов)</string>
+    <string name="dialog_join_input_hint">KHJ001</string>
+    <string name="btn_join_capsule">Присоединиться</string>
+    <string name="join_success_msg">Вы добавлены в капсулу «%1$s»!</string>
+    <string name="invite_code_badge">Код: %1$s</string>
+    <string name="invite_code_copied">Код приглашения скопирован: %1$s</string>
+    <string name="selected_participants_title">Выбранные участники</string>
+    <string name="my_capsules_empty_title">У вас пока нет капсул</string>
+    <string name="my_capsules_empty_desc">Вы ещё не создали ни одной капсулы времени и пока не состоите в чужих. Создайте свою первую капсулу!</string>
+    <string name="my_capsules_error_title">Не удалось загрузить капсулы</string>
+    <string name="btn_create_first_capsule">Создать капсулу</string>
+    <string name="btn_retry">Повторить</string>
+    <string name="capsule_role_creator">Создатель</string>
+    <string name="capsule_role_participant">Участник</string>
+    <string name="capsule_distance_format">%1$.0f м от вас</string>
+    <string name="capsule_distance_km_format">%1$.1f км от вас</string>
+    <string name="capsule_distance_inside">В зоне капсулы (дистанция %1$.0f м, радиус %2$.0f м)</string>
+    <string name="capsule_distance_unknown">Расстояние: поиск координат GPS…</string>
+    <string name="stages_progress_format">Этапы: %1$d из %2$d разблокировано</string>
+    <string name="capsule_group_label">Групповая</string>
+    <string name="capsule_single_label">Индивидуальная</string>
+
+    <!-- Radar Screen -->
+    <string name="capsule_status_unlocked">КАПСУЛА ОТКРЫТА</string>
+    <string name="capsule_status_locked">КАПСУЛА ЗАБЛОКИРОВАНА</string>
+    <string name="capsule_tap_unlocked_hint">Нажмите на 3D-капсулу, чтобы прочитать письмо в будущее</string>
+    <string name="capsule_tap_locked_hint">Нажмите на 3D-капсулу для просмотра статуса блокировки</string>
+    <string name="access_locked_dialog_title">Доступ заблокирован</string>
+    <string name="access_locked_message">Доступ заблокирован. Ожидание: %1$s</string>
+    <string name="access_locked_all_participants">всех участников</string>
+    <string name="radar_section_title">Гео-радар синхронизации</string>
+    <string name="radar_distance_meters">Дистанция до центра: %1$.1f м (радиус %2$.0f м)</string>
+    <string name="radar_distance_waiting">Дистанция: ожидание координат… (радиус %1$.0f м)</string>
+    <string name="heartbeat_real_active">Heartbeat: активен (чекин каждые 15 с)</string>
+    <string name="heartbeat_demo_active">Heartbeat: демо-чекин активен (каждые 15 с)</string>
+    <string name="heartbeat_demo_idle">Heartbeat: на паузе (включён Demo Mode)</string>
+    <string name="heartbeat_syncing_now">Синхронизация координат…</string>
+    <string name="btn_demo_force_checkin">[ДЕМО] Принудительный чекин всех</string>
+    <string name="btn_open_timeline">Открыть письмо в будущее</string>
+    <string name="btn_refresh">Обновить</string>
+    <string name="participants_title">Участники капсулы</string>
+    <string name="badge_nearby">На месте (%1$d сек назад)</string>
+    <string name="badge_away_meters">В пути (%1$.0f м)</string>
+    <string name="badge_away_unknown">В пути (нет координат)</string>
+    <string name="loading_data">Загрузка капсул времени…</string>
+    <string name="empty_capsules">Нет доступных капсул</string>
+
+    <!-- Timeline Screen -->
+    <string name="timeline_screen_title">Письмо в будущее по пунктам</string>
+    <string name="btn_back_to_radar">Назад к радару</string>
+    <string name="stage_header_format">Этап %1$d</string>
+    <string name="stage_status_unlocked">РАЗБЛОКИРОВАНО</string>
+    <string name="stage_status_locked">ЗАБЛОКИРОВАНО</string>
+    <string name="stage_unlock_date_format">Дата открытия: %1$s</string>
+    <string name="stage_locked_hint_format">Заблокировано до %1$s (требуется присутствие всех участников)</string>
+
+    <!-- Create Capsule Screen -->
+    <string name="create_screen_title">Создать капсулу времени</string>
+    <string name="field_title_label">Название капсулы</string>
+    <string name="field_title_placeholder">Капсула Худжанд 2.0</string>
+    <string name="btn_take_my_location">Взять мою текущую позицию</string>
+    <string name="location_coords_format">Координаты: %1$.5f, %2$.5f</string>
+    <string name="location_coords_empty">Координаты ещё не получены</string>
+    <string name="radius_slider_format">Радиус активации: %1$.0f м</string>
+    <string name="participants_select_title">Участники капсулы</string>
+    <string name="participants_search_label">Поиск друзей по имени или email</string>
+    <string name="participants_search_placeholder">Например: Zainab или z***b@gmail.com</string>
+    <string name="creator_mandatory_note">(создатель выбран всегда)</string>
+    <string name="stages_list_title">Этапы открытия капсулы</string>
+    <string name="btn_add_stage">Добавить этап</string>
+    <string name="btn_pick_unlock_date">Дата открытия: %1$s</string>
+    <string name="field_secret_text_label">Секретное послание этапа #%1$d</string>
+    <string name="btn_delete_stage">Удалить этап</string>
+    <string name="btn_submit_create_capsule">Создать капсулу времени</string>
+    <string name="validation_create_error">Заполните название, получите координаты и добавьте хотя бы один этап с текстом</string>
+    <string name="create_capsule_success">Капсула «%1$s» успешно создана!</string>
+
+    <!-- Unlock Effects & Current Stage Highlight -->
+    <string name="capsule_just_unlocked_snackbar">✦ Капсула «%1$s» разблокирована! Все участники рядом.</string>
+    <string name="capsule_neon_unlocked_banner">✦ КАПСУЛА РАЗБЛОКИРОВАНА ✦</string>
+    <string name="stage_badge_current">ТЕКУЩИЙ ЭТАП</string>
+    <string name="stage_current_hint">Активный этап капсулы времени</string>
+
+    <!-- Network & Mock Fallback -->
+    <string name="network_error_fallback_mock">Ошибка сети (%1$s). Загружены локальные данные.</string>
+    <string name="network_error_snackbar">Ошибка сети: %1$s</string>
+    <string name="demo_force_checkin_done">Принудительный чекин выполнен для всех участников</string>
+    <string name="demo_force_checkin_mock_done">Сервер недоступен: применён локальный демо-чекин «все на месте»</string>
+    <string name="mock_capsule_khujand_title">Капсула Худжанд</string>
+    <string name="mock_stage_1_decrypted">Этап 1: Привет из Худжанда! Первый этап капсулы времени успешно открыт.</string>
+    <string name="locked_stage_placeholder">[ЗАШИФРОВАНО AES-256-GCM]</string>
+
+    <!-- Home Screen -->
+    <string name="home_title">Time Capsule 2.0</string>
+    <string name="home_subtitle">Запечатывайте воспоминания и открывайте их в будущем</string>
+    <string name="home_seal_btn">Запечатать новое воспоминание</string>
+    <string name="home_seal_desc">Сохраните послание в будущее для себя или близких</string>
+    <string name="home_closest_unlock_title">Ближайшее открытие</string>
+    <string name="home_closest_unlock_empty">Нет запечатанных капсул</string>
+    <string name="home_closest_countdown_format">До открытия: %1$d дн. %2$d ч. %3$d мин.</string>
+    <string name="home_quick_radar_title">Гео-радар синхронизации</string>
+    <string name="home_quick_radar_desc">Открыть радар для поиска и чекина с друзьями на месте</string>
+    <string name="home_card_join_title">Присоединиться по коду</string>
+    <string name="home_card_join_desc">Введите 6-значный инвайт-код друга</string>
+
+    <!-- Capsules Screen («Полка воспоминаний») -->
+    <string name="capsules_shelf_title">Полка воспоминаний</string>
+    <string name="search_capsules_hint">Поиск по названию, #тегу, получателю…</string>
+    <string name="tab_sealed">Запечатанные</string>
+    <string name="tab_ready">Готовые</string>
+    <string name="tab_opened">Открытые</string>
+    <string name="tab_archive">Архив</string>
+    <string name="empty_sealed_title">Нет запечатанных воспоминаний</string>
+    <string name="empty_sealed_desc">Все ваши воспоминания уже готовы к открытию или ещё не созданы.</string>
+    <string name="empty_ready_title">Нет готовых к открытию</string>
+    <string name="empty_ready_desc">Капсулы перейдут сюда, когда наступит дата открытия или все участники соберутся вместе.</string>
+    <string name="empty_opened_title">Нет открытых капсул</string>
+    <string name="empty_opened_desc">Здесь будут храниться прочитанные послания, которые вы уже открыли.</string>
+    <string name="empty_archive_title">Архив пуст</string>
+    <string name="empty_archive_desc">Вы можете перемещать прочитанные воспоминания в архив через меню карточки.</string>
+    <string name="btn_open_now">Открыть воспоминание</string>
+    <string name="menu_archive">В архив</string>
+    <string name="menu_unarchive">Вернуть из архива</string>
+    <string name="capsule_opened_success">Капсула «%1$s» успешно открыта!</string>
+    <string name="capsule_archived_success">Капсула «%1$s» перемещена в архив</string>
+    <string name="capsule_unarchived_success">Капсула «%1$s» возвращена из архива</string>
+    <string name="recipient_format">Для: %1$s</string>
+    <string name="capsule_badge_sealed">ЗАПЕЧАТАНА</string>
+    <string name="capsule_badge_ready">ГОТОВА К ОТКРЫТИЮ</string>
+    <string name="capsule_badge_opened">ОТКРЫТА</string>
+    <string name="capsule_badge_archived">В АРХИВЕ</string>
+
+    <!-- Create Screen -->
+    <string name="create_step_type">Тип капсулы</string>
+    <string name="type_message">Сообщение</string>
+    <string name="type_photo">Фото</string>
+    <string name="type_voice">Голос</string>
+    <string name="badge_soon">Скоро</string>
+    <string name="create_step_content">Содержимое</string>
+    <string name="field_message_label">Ваше послание в будущее</string>
+    <string name="field_message_placeholder">Напишите то, что хотите вспомнить или сказать сквозь время…</string>
+    <string name="field_recipient_label">Получатель (необязательно)</string>
+    <string name="field_recipient_placeholder">Например: Для моей дочери или Самому себе</string>
+    <string name="field_tags_label">Теги (до 5 шт., через запятую)</string>
+    <string name="field_tags_placeholder">семья, мечта, будущее</string>
+    <string name="create_step_date">Дата открытия</string>
+    <string name="chip_tomorrow">Завтра</string>
+    <string name="chip_week">Через неделю</string>
+    <string name="chip_month">Через месяц</string>
+    <string name="chip_custom_date">Выбрать дату</string>
+    <string name="chip_demo_1min">[ДЕМО] через 1 минуту</string>
+    <string name="summary_card_title">Капсула останется запечатанной до:</string>
+    <string name="summary_days_left">Осталось: %1$d дн.</string>
+    <string name="rule_sealed_title">Если закрыто, то закрыто</string>
+    <string name="rule_sealed_desc">После создания капсулу нельзя отредактировать, а секретный текст невозможно прочитать или расшифровать до наступления даты.</string>
+    <string name="geo_lock_switch">Открыть только на месте (гео + друзья)</string>
+    <string name="geo_lock_hint">Требует нахождения всех участников в радиусе капсулы для разблокировки</string>
+    <string name="confirm_seal_title">Запечатать капсулу?</string>
+    <string name="confirm_seal_msg">Послание будет зашифровано алгоритмом AES-256-GCM и запечатано до %1$s. Отредактировать или прочитать его раньше срока невозможно.</string>
+    <string name="btn_seal_capsule">Запечатать капсулу</string>
+
+    <!-- Ideas Screen («Искра для истории») -->
+    <string name="ideas_title">Искра для истории</string>
+    <string name="ideas_subtitle">Готовые шаблоны и идеи для воспоминаний сквозь время</string>
+    <string name="idea_letter_10y_title">Письмо себе через 10 лет</string>
+    <string name="idea_letter_10y_desc">Каким вы видите себя через десятилетие? Зафиксируйте текущие ценности, мечты и надежды.</string>
+    <string name="idea_predictions_2036_title">Прогнозы на 2036 год</string>
+    <string name="idea_predictions_2036_desc">Каким станет мир, технологии, ваша профессия и жизнь вокруг через 10 лет?</string>
+    <string name="idea_child_18_title">Послание будущему ребёнку на 18-летие</string>
+    <string name="idea_child_18_desc">Тёплые напутствия, семейные истории и родительская любовь к совершеннолетию.</string>
+    <string name="idea_anniversary_title">Годовщина</string>
+    <string name="idea_anniversary_desc">Сохраните искренние чувства сегодняшнего дня, чтобы вновь пережить их в праздничную дату.</string>
+    <string name="idea_birthday_title">День рождения, который хочется запомнить</string>
+    <string name="idea_birthday_desc">Запечатлейте эмоции, близких людей рядом и благодарность за этот жизненный этап.</string>
+    <string name="idea_family_history_title">Семейная история</string>
+    <string name="idea_family_history_desc">Рассказы предков, родовые традиции и важные моменты, которые нельзя забывать.</string>
+    <string name="idea_photo_archive_title">Фотоархив молодости</string>
+    <string name="idea_photo_archive_desc">Коллекция памятных снимков и атмосферы (Скоро)</string>
+    <string name="idea_voice_2026_title">Голос из 2026 года</string>
+    <string name="idea_voice_2026_desc">Аудиозапись живого голоса, смеха и интонаций (Скоро)</string>
+
+    <!-- Settings Screen («Чувствуй себя как дома») -->
+    <string name="settings_screen_title">Настройки</string>
+    <string name="settings_subtitle">Чувствуй себя как дома</string>
+    <string name="settings_profile_section">Профиль и аккаунт</string>
+    <string name="settings_privacy_section">Конфиденциальность</string>
+    <string name="settings_data_section">Управление данными</string>
+    <string name="settings_about_section">О приложении</string>
+    <string name="pin_lock_title">PIN-блокировка приложения</string>
+    <string name="pin_lock_desc">Защита доступа 4-значным PIN-кодом (хеш SHA-256 с солью)</string>
+    <string name="dialog_set_pin_title">Установка 4-значного PIN-кода</string>
+    <string name="dialog_enter_pin_title">Введите PIN-код для входа</string>
+    <string name="pin_incorrect">Неверный PIN-код</string>
+    <string name="pin_set_success">PIN-блокировка успешно активирована</string>
+    <string name="pin_removed_success">PIN-блокировка отключена</string>
+    <string name="btn_forgot_pin">Забыли PIN?</string>
+    <string name="forgot_pin_confirm">Забыли PIN-код? Это приведёт к выходу из аккаунта и сбросу блокировки. Продолжить?</string>
+    <string name="export_data_btn">Экспорт копии (JSON)</string>
+    <string name="export_data_desc">Поделиться метаданными ваших капсул и текстами уже открытых воспоминаний</string>
+    <string name="delete_all_data_btn">Удалить все данные</string>
+    <string name="delete_all_data_desc">Безвозвратное удаление всех ваших капсул, сессий и выход из системы</string>
+    <string name="dialog_delete_data_title">Удалить все данные?</string>
+    <string name="dialog_delete_data_msg">Вы уверены? Ваши созданные капсулы будут навсегда удалены с сервера, вы будете исключены из капсул друзей, а текущая сессия завершена. Это действие невозможно отменить.</string>
+    <string name="data_deleted_success">Все ваши данные успешно удалены с сервера</string>
+    <string name="notifications_toggle_title">Локальные уведомления</string>
+    <string name="notifications_toggle_desc">Оповещения о наступлении дат открытия капсул</string>
+    <string name="about_app_title">О приложении Time Capsule</string>
+    <string name="about_privacy_title">Политика конфиденциальности</string>
+    <string name="about_terms_title">Условия использования</string>
+    <string name="about_app_text">«Time Capsule 2.0» — приложение для сохранения личных и групповых воспоминаний во времени. Каждое воспоминание шифруется по стандарту AES-256-GCM. Главное правило: «Если закрыто, то закрыто» — текст защищён до наступления даты открытия.</string>
+    <string name="about_privacy_text">Ваша приватность превыше всего. Сервер не имеет доступа к расшифровке секретного текста до выполнения условий. Местоположение используется исключительно для гео-синхронизации чекинов. Вы можете полностью удалить все свои данные в любой момент.</string>
+    <string name="about_terms_text">Сервис предназначен для сохранения персональных и совместных воспоминаний. Запрещается сохранение противоправного контента. Приложение гарантирует криптографическую защиту запечатанных данных.</string>
+    <string name="export_chooser_title">Экспорт архива Time Capsule</string>
+    <string name="export_copied_notice">Архив капсул времени экспортирован в формате JSON</string>
+</resources>
