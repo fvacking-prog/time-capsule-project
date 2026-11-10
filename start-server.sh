@@ -48,3 +48,4 @@ fi
 
 echo "Сервер запускается из $JAR_FILE ..."
 exec "$JAVA_HOME/bin/java" -jar "$JAR_FILE"
+

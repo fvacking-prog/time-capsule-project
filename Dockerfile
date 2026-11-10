@@ -20,3 +20,4 @@ VOLUME ["/app/data"]
 EXPOSE 8080
 
 ENTRYPOINT ["java", "-jar", "/app/timecapsule-server.jar"]
+
