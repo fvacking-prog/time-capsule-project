@@ -19,11 +19,15 @@ echo " Time Capsule 2.0: Install & Run APK"
 echo " ADB: $ADB_BIN"
 echo "=========================================="
 
-APK="$DIR/android-client/app/build/outputs/apk/debug/app-debug.apk"
+APK="$DIR/android-client/app/build/outputs/apk/release/app-release.apk"
+if [ ! -f "$APK" ]; then
+    APK="$DIR/android-client/app/build/outputs/apk/debug/app-debug.apk"
+fi
 if [ ! -f "$APK" ]; then
     echo "Сборка APK..."
     cd "$DIR/android-client"
-    ./gradlew assembleDebug --no-daemon
+    ./gradlew assembleRelease --no-daemon
+    APK="$DIR/android-client/app/build/outputs/apk/release/app-release.apk"
 fi
 
 echo "Проверка подключённых устройств..."
