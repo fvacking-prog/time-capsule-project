@@ -26,6 +26,14 @@ import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
+import io.ktor.server.application.ApplicationCallPipeline
+import io.ktor.server.application.call
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.less
+import org.jetbrains.exposed.sql.deleteWhere
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -37,6 +45,7 @@ class ParticipantNotFoundException(message: String) : RuntimeException(message)
 class ForbiddenException(message: String) : RuntimeException(message)
 class UnauthorizedException(message: String) : RuntimeException(message)
 class ConflictException(message: String) : RuntimeException(message)
+class TooManyRequestsException(message: String) : RuntimeException(message)
 
 fun main() {
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
@@ -45,6 +54,8 @@ fun main() {
 }
 
 fun Application.module() {
+    CryptoUtils.validateCryptoConfig()
+
     val dataDir = java.io.File("./data")
     if (!dataDir.exists()) {
         dataDir.mkdirs()
@@ -57,6 +68,31 @@ fun Application.module() {
     )
 
     migrateAndSeedDatabase()
+
+    // Фоновая периодическая очистка просроченных сессий раз в 60 секунд
+    launch(Dispatchers.IO) {
+        while (isActive) {
+            delay(60_000L)
+            try {
+                transaction {
+                    val now = System.currentTimeMillis()
+                    Sessions.deleteWhere { Sessions.expiresAt less now }
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    // Ограничение максимального размера входящего тела запроса (10 МБ)
+    intercept(ApplicationCallPipeline.Plugins) {
+        val contentLength = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
+        if (contentLength != null && contentLength > 10 * 1024 * 1024) {
+            call.respondText(
+                text = "Payload Too Large (максимум 10 МБ)",
+                status = HttpStatusCode.PayloadTooLarge
+            )
+            finish()
+        }
+    }
 
     install(CORS) {
         anyHost()
@@ -114,6 +150,12 @@ fun Application.module() {
             call.respondText(
                 text = cause.message ?: "Forbidden",
                 status = HttpStatusCode.Forbidden
+            )
+        }
+        exception<TooManyRequestsException> { call, cause ->
+            call.respondText(
+                text = cause.message ?: "Too many requests",
+                status = HttpStatusCode.TooManyRequests
             )
         }
         exception<ConflictException> { call, cause ->

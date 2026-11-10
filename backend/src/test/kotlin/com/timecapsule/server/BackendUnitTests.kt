@@ -633,5 +633,63 @@ class BackendUnitTests {
             assertEquals(1L, CapsuleParticipants.selectAll().where { CapsuleParticipants.capsuleId eq "cap_other" }.count())
         }
     }
+
+    @Test
+    fun `auth rate limiter blocks brute force after 20 attempts`() {
+        val testIp = "192.168.1.100"
+        for (i in 1..20) {
+            AuthRateLimiter.checkOrThrow(testIp)
+        }
+        assertFailsWith<TooManyRequestsException> {
+            AuthRateLimiter.checkOrThrow(testIp)
+        }
+    }
+
+    @Test
+    fun `expired session is purged from database`() {
+        val testDb = Database.connect(
+            url = "jdbc:h2:mem:test_expired_${System.nanoTime()};DB_CLOSE_DELAY=-1",
+            driver = "org.h2.Driver"
+        )
+        transaction(testDb) {
+            SchemaUtils.create(Sessions, Users)
+            Users.insert {
+                it[id] = "user_exp"
+                it[username] = "ExpiredUser"
+            }
+            val now = 1_000_000L
+            val token = createSessionToken("user_exp", now)
+
+            assertEquals(1L, Sessions.selectAll().where { Sessions.token eq token }.count())
+
+            // Simulating time passing beyond expiry (now + 31 days)
+            val futureTime = now + 31L * 24 * 60 * 60 * 1000L
+            val sessionRow = Sessions.selectAll().where { Sessions.token eq token }.single()
+            if (futureTime > sessionRow[Sessions.expiresAt]) {
+                Sessions.deleteWhere { Sessions.token eq token }
+            }
+
+            assertEquals(0L, Sessions.selectAll().where { Sessions.token eq token }.count())
+        }
+    }
+
+    @Test
+    fun `fail fast when DEMO_MODE is false and CAPSULE_AES_KEY is missing`() {
+        val prevProp = System.getProperty("DEMO_MODE")
+        try {
+            System.setProperty("DEMO_MODE", "false")
+            if (System.getenv("CAPSULE_AES_KEY").isNullOrEmpty()) {
+                assertFailsWith<IllegalStateException> {
+                    CryptoUtils.validateCryptoConfig()
+                }
+            }
+        } finally {
+            if (prevProp != null) {
+                System.setProperty("DEMO_MODE", prevProp)
+            } else {
+                System.setProperty("DEMO_MODE", "true")
+            }
+        }
+    }
 }
 

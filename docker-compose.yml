@@ -1,0 +1,16 @@
+services:
+  timecapsule-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: timecapsule-backend
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - DEMO_MODE=true
+      - CAPSULE_AES_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      - GOOGLE_WEB_CLIENT_ID=${GOOGLE_WEB_CLIENT_ID:-}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

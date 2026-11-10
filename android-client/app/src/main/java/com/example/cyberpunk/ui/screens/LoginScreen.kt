@@ -158,20 +158,31 @@ fun LoginScreen(
                             coroutineScope.launch {
                                 try {
                                     val credentialManager = CredentialManager.create(context)
-                                    val googleIdOption = GetGoogleIdOption.Builder()
-                                        .setFilterByAuthorizedAccounts(false)
-                                        .setServerClientId(webClientId)
-                                        .setAutoSelectEnabled(false)
-                                        .build()
+                                    fun buildCredentialRequest(filterAuthorized: Boolean): GetCredentialRequest {
+                                        val googleIdOption = GetGoogleIdOption.Builder()
+                                            .setFilterByAuthorizedAccounts(filterAuthorized)
+                                            .setServerClientId(webClientId)
+                                            .setAutoSelectEnabled(false)
+                                            .build()
+                                        return GetCredentialRequest.Builder()
+                                            .addCredentialOption(googleIdOption)
+                                            .build()
+                                    }
 
-                                    val request = GetCredentialRequest.Builder()
-                                        .addCredentialOption(googleIdOption)
-                                        .build()
+                                    val result = try {
+                                        // Шаг 1: попытка входа через ранее авторизованные Google-аккаунты
+                                        credentialManager.getCredential(
+                                            request = buildCredentialRequest(filterAuthorized = true),
+                                            context = context
+                                        )
+                                    } catch (_: NoCredentialException) {
+                                        // Шаг 2: fallback на полный выбор любого Google-аккаунта
+                                        credentialManager.getCredential(
+                                            request = buildCredentialRequest(filterAuthorized = false),
+                                            context = context
+                                        )
+                                    }
 
-                                    val result = credentialManager.getCredential(
-                                        request = request,
-                                        context = context
-                                    )
                                     val credential = result.credential
                                     if (credential is CustomCredential &&
                                         credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL

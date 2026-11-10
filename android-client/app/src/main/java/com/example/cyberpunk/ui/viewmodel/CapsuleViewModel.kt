@@ -935,9 +935,10 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun submitCreateCapsule(onCreated: () -> Unit) {
-        dismissConfirmSealDialog()
         val state = _uiState.value
         val form = state.createForm
+        if (form.isSubmitting) return
+        dismissConfirmSealDialog()
         val creatorId = state.currentUserId ?: "user_maga"
         val message = form.messageText.ifBlank { form.stages.firstOrNull()?.secretText.orEmpty() }
 

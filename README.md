@@ -6,10 +6,35 @@
 
 ## Структура проекта
 
-- `backend/` — сервер на Kotlin 2.0.21 + Ktor 3.0.1 (Netty) + Exposed 0.56.0 + H2 в файловом режиме (`jdbc:h2:file:./data/timecapsule;DB_CLOSE_DELAY=-1`). Данные и сессии сохраняются между перезапусками сервера.
-- `android-client/` — Android-клиент на Kotlin 2.0.21 + Jetpack Compose (Material 3, тема Tokyo Night) + Ktor Client 3.0.1 + Credential Manager API + DataStore + Coil. Включает 3 вкладки: «Радар», «Мои капсулы» (с гео-сортировкой и Pull-to-refresh) и «Создать».
-- `AUDIT.md` — отчёт QA и аудита безопасности проекта.
-- `CHANGELOG.md` — история версий и изменений проекта.
+- `backend/` — сервер на Kotlin 2.0.21 + Ktor 3.0.1 (Netty) + Exposed 0.56.0 + H2 в файловом режиме (`jdbc:h2:file:./data/timecapsule;DB_CLOSE_DELAY=-1`). Собирается в автономный Fat JAR (`timecapsule-server.jar`).
+- `android-client/` — Android-клиент на Kotlin 2.0.21 + Jetpack Compose (Material 3, тема Tokyo Night) + Ktor Client 3.0.1 + Credential Manager API + DataStore + Coil. Включает 5 разделов навигации («Главная», «Капсулы», «Создать», «Идеи», «Настройки»), экраны «Радар» и «Таймлайн».
+- `RELEASE.md` — релизное руководство: пути к собранным APK, AAB и Fat JAR, генерация ключей и подпись, пошаговый сценарий защиты проекта.
+- `REPORT.md` — подробный отчёт предрелизного аудита и исправления всех дефектов.
+- `AUDIT.md` — отчёт первоначального QA и аудита безопасности проекта.
+- `CHANGELOG.md` — история версий и изменений проекта (релиз 1.0.0).
+
+---
+
+## Быстрый старт и запуск
+
+1. **Запуск сервера (автономный Fat JAR):**
+   ```bash
+   ./start-server.sh
+   ```
+   Сервер стартует за 0.9 секунды на `http://0.0.0.0:8080`. Для сброса базы используйте `./reset-data.sh`.
+   Также доступен запуск через Docker: `docker compose up -d --build`.
+
+2. **Сборка релизного APK и AAB:**
+   ```bash
+   # 1. Генерация ключа подписи (если ещё не создан):
+   ./make-keystore.sh
+   # 2. Сборка подписанного APK и AAB:
+   cd android-client && ./gradlew assembleRelease bundleRelease
+   ```
+   Собранные файлы:
+   - APK: `android-client/app/build/outputs/apk/release/app-release.apk`
+   - AAB: `android-client/app/build/outputs/bundle/release/app-release.aab`
+   - Server JAR: `backend/build/libs/timecapsule-server.jar`
 
 ---
 

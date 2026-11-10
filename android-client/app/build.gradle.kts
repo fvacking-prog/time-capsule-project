@@ -19,6 +19,38 @@ val googleWebClientId: String = (
         ?: ""
 ).trim()
 
+// Чтение настроек подписи релиза из keystore.properties (если файл существует)
+val keystorePropsCandidates = listOf(
+    rootProject.file("keystore.properties"),
+    rootProject.file("../keystore.properties"),
+    project.file("keystore.properties")
+)
+val keystorePropsFile = keystorePropsCandidates.firstOrNull { it.exists() }
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile != null) {
+        keystorePropsFile.inputStream().use { load(it) }
+    }
+}
+
+fun resolveKeystoreFile(rawPath: String?): File? {
+    if (rawPath.isNullOrBlank()) return null
+    val direct = File(rawPath)
+    if (direct.exists()) return direct
+    val relRoot = rootProject.file(rawPath)
+    if (relRoot.exists()) return relRoot
+    val relParent = rootProject.file("../$rawPath")
+    if (relParent.exists()) return relParent
+    val relProject = project.file(rawPath)
+    if (relProject.exists()) return relProject
+    return null
+}
+
+val releaseStoreFile = resolveKeystoreFile(keystoreProps.getProperty("storeFile"))
+val hasReleaseSigning = releaseStoreFile != null &&
+    !keystoreProps.getProperty("storePassword").isNullOrBlank() &&
+    !keystoreProps.getProperty("keyAlias").isNullOrBlank() &&
+    !keystoreProps.getProperty("keyPassword").isNullOrBlank()
+
 android {
     namespace = "com.example.cyberpunk"
     compileSdk = 35
@@ -28,18 +60,41 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "2.0"
+        versionName = "1.0.0"
 
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
+        // Флаг Demo Mode: по умолчанию включён для защиты проекта. Для боевого релиза установите false.
+        buildConfigField("Boolean", "ENABLE_DEMO", "true")
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = releaseStoreFile
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                signingConfig = null
+                println("ВНИМАНИЕ: keystore.properties не найден или releaseStoreFile отсутствует. Сборка release будет неподписанной.")
+            }
+        }
+        debug {
+            isMinifyEnabled = false
         }
     }
 
@@ -97,5 +152,6 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.coil.compose)
 
+    testImplementation(kotlin("test"))
     debugImplementation(libs.androidx.ui.tooling)
 }

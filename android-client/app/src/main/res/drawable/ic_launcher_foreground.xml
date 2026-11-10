@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Внешнее сияние капсулы -->
+    <path
+        android:strokeColor="#7AA2F7"
+        android:strokeWidth="1.5"
+        android:strokeAlpha="0.4"
+        android:fillColor="#00000000"
+        android:pathData="M54,20 C40,20 34,32 34,48 L34,60 C34,76 40,88 54,88 C68,88 74,76 74,60 L74,48 C74,32 68,20 54,20 Z" />
+
+    <!-- Верхняя половина капсулы -->
+    <path
+        android:strokeColor="#7AA2F7"
+        android:strokeWidth="3.5"
+        android:fillColor="#24283B"
+        android:pathData="M54,24 C43,24 38,34 38,48 L38,54 L70,54 L70,48 C70,34 65,24 54,24 Z" />
+
+    <!-- Нижняя половина капсулы -->
+    <path
+        android:strokeColor="#BB9AF7"
+        android:strokeWidth="3.5"
+        android:fillColor="#1F2335"
+        android:pathData="M38,54 L38,60 C38,74 43,84 54,84 C65,84 70,74 70,60 L70,54 Z" />
+
+    <!-- Разделительное неоновое кольцо по центру -->
+    <path
+        android:strokeColor="#7DCFFF"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M33,54 L75,54" />
+
+    <!-- Центральный узел времени -->
+    <path
+        android:fillColor="#7DCFFF"
+        android:pathData="M54,54m-4,0a4,4 0,1 1,8 0a4,4 0,1 1,-8 0" />
+
+    <!-- Внутренние неоновые метки этапов -->
+    <path
+        android:strokeColor="#7AA2F7"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M48,36 L60,36 M46,44 L62,44 M46,64 L62,64 M48,72 L60,72" />
+</vector>
+

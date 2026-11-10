@@ -126,6 +126,24 @@ fun joinCapsuleByInviteCode(
     return buildCapsuleDto(capsuleId, now, requestingUserId = userId)
 }
 
+object AuthRateLimiter {
+    private val attempts = java.util.concurrent.ConcurrentHashMap<String, MutableList<Long>>()
+    private const val MAX_ATTEMPTS = 20
+    private const val WINDOW_MILLIS = 60_000L
+
+    fun checkOrThrow(clientIp: String) {
+        val now = System.currentTimeMillis()
+        val list = attempts.computeIfAbsent(clientIp) { java.util.Collections.synchronizedList(mutableListOf()) }
+        synchronized(list) {
+            list.removeIf { now - it > WINDOW_MILLIS }
+            if (list.size >= MAX_ATTEMPTS) {
+                throw TooManyRequestsException("Слишком много попыток авторизации. Повторите через минуту.")
+            }
+            list.add(now)
+        }
+    }
+}
+
 fun Route.capsuleRoutes() {
     get("/health") {
         call.respondText("ok")
@@ -133,6 +151,10 @@ fun Route.capsuleRoutes() {
 
     route("/api/v1/auth") {
         post("/google") {
+            val clientIp = call.request.header("X-Forwarded-For")?.split(",")?.firstOrNull()?.trim()
+                ?: call.request.local.remoteHost
+            AuthRateLimiter.checkOrThrow(clientIp)
+
             val request = call.receive<GoogleAuthRequest>()
             val rawIdToken = request.idToken.trim()
             if (rawIdToken.isEmpty()) {
@@ -183,6 +205,10 @@ fun Route.capsuleRoutes() {
 
         // ТОЛЬКО ДЛЯ ДЕМО НА ЗАЩИТЕ ПРОЕКТА
         post("/demo") {
+            val clientIp = call.request.header("X-Forwarded-For")?.split(",")?.firstOrNull()?.trim()
+                ?: call.request.local.remoteHost
+            AuthRateLimiter.checkOrThrow(clientIp)
+
             if (!isDemoModeEnabled()) {
                 throw ForbiddenException("Demo mode is disabled")
             }
@@ -587,6 +613,7 @@ internal fun ApplicationCall.requireAuthenticatedUserId(): String {
 
         val expiresAt = sessionRow[Sessions.expiresAt]
         if (now > expiresAt) {
+            Sessions.deleteWhere { Sessions.token eq token }
             throw UnauthorizedException("Session token has expired")
         }
 

@@ -44,9 +44,25 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    systemProperty("DEMO_MODE", "true")
 }
 
 tasks.named<JavaExec>("run") {
     environment("DEMO_MODE", System.getenv("DEMO_MODE") ?: "true")
+}
+
+tasks.register<Jar>("fatJar") {
+    archiveBaseName.set("timecapsule-server")
+    archiveClassifier.set("")
+    archiveVersion.set("")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {
+        attributes["Main-Class"] = "com.timecapsule.server.ApplicationKt"
+    }
+    from(sourceSets.main.get().output)
+    dependsOn(configurations.runtimeClasspath)
+    from({
+        configurations.runtimeClasspath.get().filter { it.name.endsWith("jar") }.map { zipTree(it) }
+    })
 }
 

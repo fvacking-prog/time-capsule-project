@@ -2,6 +2,28 @@
 
 Все заметные изменения проекта «Time Capsule 2.0» документируются в этом файле.
 
+## [1.0.0] - 2026-11-10 (Official Release)
+
+### Релизная подготовка и исправления
+- **Релизные артефакты Android:**
+  - Настроены `versionCode = 1` и `versionName = "1.0.0"`.
+  - Включена оптимизация R8 (`minifyEnabled = true`, `shrinkResources = true`), размер APK оптимизирован до **4.4 МБ**.
+  - Создан полный набор правил `proguard-rules.pro` для kotlinx.serialization, Ktor Client, OkHttp, Credential Manager, googleid, DataStore, Coil и Compose.
+  - Настроена подпись релизной сборки через `keystore.properties` и создан скрипт генерации ключей `./make-keystore.sh` (RSA 2048, 10 000 дней). Сгенерирован подписанный `app-release.apk` и `app-release.aab`.
+  - Добавлены адаптивные векторные иконки приложения в теме Tokyo Night (`ic_launcher`, `ic_launcher_round`, `ic_launcher_monochrome` для Android 13+ themed icons) и Splash Screen API.
+  - В `AndroidManifest.xml` выставлено `allowBackup = "false"`, добавлены разрешения `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`, `INTERNET`, `POST_NOTIFICATIONS`.
+- **Автономный сервер (Fat JAR):**
+  - Создана задача `fatJar` в `backend/build.gradle.kts`. Сервер компилируется в автономный исполняемый `timecapsule-server.jar` (~25 МБ) и стартует за 0.9 секунды без Gradle.
+  - Созданы скрипты `./start-server.sh` (с проверкой занятости порта 8080) и `./reset-data.sh` (безопасный сброс базы с подтверждением).
+  - Добавлены `Dockerfile` и `docker-compose.yml` с монтированием тома `./data`.
+  - Fail-fast: при `DEMO_MODE=false` без `CAPSULE_AES_KEY` сервер немедленно завершает работу с понятным описанием ошибки; при `DEMO_MODE=true` использует демо-ключ с логированием предупреждения.
+  - Внедрён in-memory `AuthRateLimiter` для защиты `/api/v1/auth/*` от брутфорса (максимум 20 попыток в минуту).
+  - Добавлена периодическая фоновая очистка просроченных сессий раз в 60 секунд и удаление просроченных токенов при попытке доступа.
+- **Исправления стабильности клиента:**
+  - Google Credential Manager: реализован двухэтапный поиск аккаунта (сначала `setFilterByAuthorizedAccounts(true)`, при `NoCredentialException` повтор с `false`).
+  - Предотвращение повторных кликов: добавлен guard `isSubmitting` при отправке формы создания капсулы.
+  - Сетевая безопасность: настроен `network_security_config.xml` с явным разрешением cleartext только для доверенных локальных адресов (`10.0.2.2`, `localhost`, LAN IP) с документацией по переходу на HTTPS для публичного релиза.
+
 ## [2.2.0] - 2026-11-10
 
 ### Добавлено
