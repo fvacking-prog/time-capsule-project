@@ -3,11 +3,13 @@ package com.example.cyberpunk.data
 import com.example.cyberpunk.BuildConfig
 import com.timecapsule.shared.AuthResponse
 import com.timecapsule.shared.CapsuleDto
+import com.timecapsule.shared.CheckHandleResponse
 import com.timecapsule.shared.CheckInRequest
 import com.timecapsule.shared.CreateCapsuleRequest
 import com.timecapsule.shared.GoogleAuthRequest
 import com.timecapsule.shared.JoinCapsuleRequest
 import com.timecapsule.shared.MessageResponse
+import com.timecapsule.shared.UpdateHandleRequest
 import com.timecapsule.shared.UserDto
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -21,6 +23,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
@@ -37,6 +40,8 @@ class SessionExpiredException(message: String = "HTTP 401 Unauthorized") : Runti
 interface CapsuleRepository {
     suspend fun authGoogle(idToken: String): AuthResponse
     suspend fun getMe(): UserDto
+    suspend fun checkHandle(handle: String): CheckHandleResponse
+    suspend fun updateHandle(handle: String): UserDto
     suspend fun searchUsers(query: String = ""): List<UserDto>
     suspend fun getCapsules(): List<CapsuleDto>
     suspend fun getCapsule(id: String): CapsuleDto
@@ -130,6 +135,25 @@ class RemoteCapsuleRepository : CapsuleRepository {
         return executeWithAuthCheck {
             client.get(endpoint("/api/v1/me")) {
                 attachBearerToken()
+            }.body()
+        }
+    }
+
+    override suspend fun checkHandle(handle: String): CheckHandleResponse {
+        return executeWithAuthCheck {
+            client.get(endpoint("/api/v1/users/check-handle")) {
+                attachBearerToken()
+                parameter("handle", handle)
+            }.body()
+        }
+    }
+
+    override suspend fun updateHandle(handle: String): UserDto {
+        return executeWithAuthCheck {
+            client.put(endpoint("/api/v1/users/me/handle")) {
+                attachBearerToken()
+                contentType(ContentType.Application.Json)
+                setBody(UpdateHandleRequest(handle = handle))
             }.body()
         }
     }

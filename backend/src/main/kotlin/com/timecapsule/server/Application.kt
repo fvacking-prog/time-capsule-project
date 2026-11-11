@@ -146,6 +146,14 @@ fun Application.module() {
         allowMethod(HttpMethod.Patch)
     }
 
+    installSerializationAndErrors()
+
+    routing {
+        capsuleRoutes()
+    }
+}
+
+fun Application.installSerializationAndErrors() {
     install(ContentNegotiation) {
         json(
             Json {
@@ -229,10 +237,6 @@ fun Application.module() {
                 status = HttpStatusCode.InternalServerError
             )
         }
-    }
-
-    routing {
-        capsuleRoutes()
     }
 }
 

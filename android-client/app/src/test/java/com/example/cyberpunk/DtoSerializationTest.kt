@@ -2,12 +2,14 @@ package com.example.cyberpunk
 
 import com.timecapsule.shared.CapsuleDto
 import com.timecapsule.shared.CapsuleStageDto
+import com.timecapsule.shared.CheckHandleResponse
 import com.timecapsule.shared.CheckInRequest
 import com.timecapsule.shared.CreateCapsuleRequest
 import com.timecapsule.shared.CreateStageRequest
 import com.timecapsule.shared.JoinCapsuleRequest
 import com.timecapsule.shared.MessageResponse
 import com.timecapsule.shared.ParticipantStatusDto
+import com.timecapsule.shared.UpdateHandleRequest
 import com.timecapsule.shared.UserDto
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -28,11 +30,25 @@ class DtoSerializationTest {
             id = "user_123",
             username = "TestUser",
             email = "test@example.com",
-            photoUrl = "https://example.com/photo.png"
+            photoUrl = "https://example.com/photo.png",
+            handle = "test_user",
+            avatarUrl = "https://example.com/photo.png"
         )
         val encoded = json.encodeToString(user)
         val decoded = json.decodeFromString<UserDto>(encoded)
         assertEquals(user, decoded)
+
+        // Обратная совместимость при отсутствии handle и avatarUrl
+        val legacyJson = """{"id":"u_old","username":"Legacy"}"""
+        val decodedLegacy = json.decodeFromString<UserDto>(legacyJson)
+        assertEquals(null, decodedLegacy.handle)
+        assertEquals(null, decodedLegacy.avatarUrl)
+
+        val checkResp = CheckHandleResponse(handle = "alice_99", valid = true, available = true, reason = "OK")
+        assertEquals(checkResp, json.decodeFromString(json.encodeToString(checkResp)))
+
+        val updateReq = UpdateHandleRequest(handle = "alice_99")
+        assertEquals(updateReq, json.decodeFromString(json.encodeToString(updateReq)))
     }
 
     @Test

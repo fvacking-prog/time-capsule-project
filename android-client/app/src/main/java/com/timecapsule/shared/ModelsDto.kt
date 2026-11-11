@@ -8,7 +8,22 @@ data class UserDto(
     val id: String,
     val username: String,
     val email: String? = null,
-    val photoUrl: String? = null
+    val photoUrl: String? = null,
+    val handle: String? = null,
+    val avatarUrl: String? = null
+)
+
+@Serializable
+data class CheckHandleResponse(
+    val handle: String,
+    val valid: Boolean,
+    val available: Boolean,
+    val reason: String? = null
+)
+
+@Serializable
+data class UpdateHandleRequest(
+    val handle: String
 )
 
 @Serializable

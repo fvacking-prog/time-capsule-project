@@ -2,6 +2,8 @@ package com.example.cyberpunk
 
 import com.example.cyberpunk.data.ApiConfig
 import com.example.cyberpunk.data.GeoHelper
+import com.example.cyberpunk.data.HandleLocalValidation
+import com.example.cyberpunk.data.HandleValidator
 import com.example.cyberpunk.data.UnlockDateTimeHelper
 import java.time.Instant
 import java.time.ZoneId
@@ -112,6 +114,18 @@ class UnlockAndConfigUnitTest {
         assertEquals(0.0, GeoHelper.haversineMeters(40.2825, 69.6221, 40.2825, 69.6221), 1e-6)
         val oneDeg = GeoHelper.haversineMeters(0.0, 0.0, 1.0, 0.0)
         assertTrue(abs(oneDeg - 111_194.9266) < 0.5)
+    }
+
+    @Test
+    fun `HandleValidator enforces format, lowercase normalization, and reserved names`() {
+        assertEquals("alice_99", HandleValidator.sanitizeInput("  @Alice_99 "))
+        assertEquals(HandleLocalValidation.VALID, HandleValidator.validateLocal("@Alice_99"))
+        assertEquals(HandleLocalValidation.INVALID_FORMAT, HandleValidator.validateLocal("abc"))
+        assertEquals(HandleLocalValidation.INVALID_FORMAT, HandleValidator.validateLocal("a".repeat(25)))
+        assertEquals(HandleLocalValidation.INVALID_FORMAT, HandleValidator.validateLocal("alice-bob"))
+        assertEquals(HandleLocalValidation.RESERVED, HandleValidator.validateLocal("admin"))
+        assertEquals(HandleLocalValidation.RESERVED, HandleValidator.validateLocal("@Support"))
+        assertEquals(HandleLocalValidation.RESERVED, HandleValidator.validateLocal("timecapsule"))
     }
 }
 

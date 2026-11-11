@@ -20,6 +20,8 @@ object ApiConfig {
     private val DS_USERNAME = stringPreferencesKey("username")
     private val DS_EMAIL = stringPreferencesKey("email")
     private val DS_PHOTO_URL = stringPreferencesKey("photo_url")
+    private val DS_USER_HANDLE = stringPreferencesKey("user_handle")
+    private val DS_USER_AVATAR_URL = stringPreferencesKey("user_avatar_url")
 
     val DEFAULT_BASE_URL: String
         get() = normalizeUrl(BuildConfig.API_BASE_URL)
@@ -110,19 +112,24 @@ object ApiConfig {
         val username = prefs[DS_USERNAME]?.takeIf { it.isNotBlank() } ?: userId
         val email = prefs[DS_EMAIL]?.takeIf { it.isNotBlank() }
         val photoUrl = prefs[DS_PHOTO_URL]?.takeIf { it.isNotBlank() }
+        val handle = prefs[DS_USER_HANDLE]?.takeIf { it.isNotBlank() }
+        val avatarUrl = prefs[DS_USER_AVATAR_URL]?.takeIf { it.isNotBlank() } ?: photoUrl
 
         sessionToken = token
         val user = UserDto(
             id = userId,
             username = username,
             email = email,
-            photoUrl = photoUrl
+            photoUrl = photoUrl,
+            handle = handle,
+            avatarUrl = avatarUrl
         )
         return user to token
     }
 
     suspend fun saveSession(context: Context, user: UserDto, token: String) {
         sessionToken = token
+        val resolvedAvatar = user.avatarUrl ?: user.photoUrl
         context.authDataStore.edit { prefs ->
             prefs[DS_SESSION_TOKEN] = token
             prefs[DS_USER_ID] = user.id
@@ -137,6 +144,16 @@ object ApiConfig {
             } else {
                 prefs.remove(DS_PHOTO_URL)
             }
+            if (user.handle != null) {
+                prefs[DS_USER_HANDLE] = user.handle
+            } else {
+                prefs.remove(DS_USER_HANDLE)
+            }
+            if (resolvedAvatar != null) {
+                prefs[DS_USER_AVATAR_URL] = resolvedAvatar
+            } else {
+                prefs.remove(DS_USER_AVATAR_URL)
+            }
         }
     }
 
@@ -148,6 +165,8 @@ object ApiConfig {
             prefs.remove(DS_USERNAME)
             prefs.remove(DS_EMAIL)
             prefs.remove(DS_PHOTO_URL)
+            prefs.remove(DS_USER_HANDLE)
+            prefs.remove(DS_USER_AVATAR_URL)
         }
     }
 }

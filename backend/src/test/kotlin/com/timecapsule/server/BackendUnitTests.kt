@@ -1,6 +1,22 @@
 package com.timecapsule.server
 
+import com.timecapsule.shared.AuthResponse
+import com.timecapsule.shared.CheckHandleResponse
 import com.timecapsule.shared.ParticipantStatusDto
+import com.timecapsule.shared.UserDto
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.put
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
+import io.ktor.server.routing.routing
+import io.ktor.server.testing.testApplication
+import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
@@ -916,6 +932,269 @@ class BackendUnitTests {
         threadPool.shutdown()
         assertTrue(completed, "Concurrency test timed out")
         assertEquals(0, errors.size, "Encountered concurrency errors: ${errors.map { it.message }}")
+    }
+
+    @Test
+    fun `handle format, reserved names, availability, uniqueness and race condition work cleanly`() = testApplication {
+        val testDb = Database.connect(
+            url = "jdbc:h2:mem:test_handles_${UUID.randomUUID()};DB_CLOSE_DELAY=-1",
+            driver = "org.h2.Driver"
+        )
+        var tokenA = ""
+        var tokenB = ""
+        transaction(testDb) {
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions)
+            Users.insert {
+                it[id] = "user_h1"
+                it[username] = "Alice"
+                it[email] = "alice@gmail.com"
+            }
+            Users.insert {
+                it[id] = "user_h2"
+                it[username] = "Bob"
+                it[email] = "bob@gmail.com"
+            }
+            tokenA = createSessionToken("user_h1")
+            tokenB = createSessionToken("user_h2")
+        }
+
+        application {
+            installSerializationAndErrors()
+            routing { capsuleRoutes() }
+        }
+
+        val json = Json { ignoreUnknownKeys = true }
+
+        // Некорректный формат (короткий / недопустимые символы) -> valid=false и PUT 400
+        val invalidCheck = client.get("/api/v1/users/check-handle?handle=ab") {
+            header(HttpHeaders.Authorization, "Bearer $tokenA")
+        }
+        assertEquals(HttpStatusCode.OK, invalidCheck.status)
+        val invalidDto = json.decodeFromString<CheckHandleResponse>(invalidCheck.bodyAsText())
+        assertFalse(invalidDto.valid)
+        assertEquals("INVALID_FORMAT", invalidDto.reason)
+
+        val badPut = client.put("/api/v1/users/me/handle") {
+            header(HttpHeaders.Authorization, "Bearer $tokenA")
+            contentType(ContentType.Application.Json)
+            setBody("""{"handle":"Alice-Invalid"}""")
+        }
+        assertEquals(HttpStatusCode.BadRequest, badPut.status)
+
+        // Зарезервированные имена -> valid=false ("RESERVED") и PUT 400
+        for (reserved in listOf("admin", "support", "root", "system", "timecapsule")) {
+            val resCheck = client.get("/api/v1/users/check-handle?handle=@${reserved.uppercase()}") {
+                header(HttpHeaders.Authorization, "Bearer $tokenA")
+            }
+            val resDto = json.decodeFromString<CheckHandleResponse>(resCheck.bodyAsText())
+            assertFalse(resDto.valid)
+            assertFalse(resDto.available)
+            assertEquals("RESERVED", resDto.reason)
+
+            val resPut = client.put("/api/v1/users/me/handle") {
+                header(HttpHeaders.Authorization, "Bearer $tokenA")
+                contentType(ContentType.Application.Json)
+                setBody("""{"handle":"$reserved"}""")
+            }
+            assertEquals(HttpStatusCode.BadRequest, resPut.status)
+        }
+
+        // Успешная установка handle с нормализацией регистра и '@'
+        val okCheck = client.get("/api/v1/users/check-handle?handle=@Alice_99") {
+            header(HttpHeaders.Authorization, "Bearer $tokenA")
+        }
+        val okCheckDto = json.decodeFromString<CheckHandleResponse>(okCheck.bodyAsText())
+        assertTrue(okCheckDto.valid && okCheckDto.available)
+        assertEquals("alice_99", okCheckDto.handle)
+
+        val okPut = client.put("/api/v1/users/me/handle") {
+            header(HttpHeaders.Authorization, "Bearer $tokenA")
+            contentType(ContentType.Application.Json)
+            setBody("""{"handle":"@Alice_99"}""")
+        }
+        assertEquals(HttpStatusCode.OK, okPut.status)
+        val updatedA = json.decodeFromString<UserDto>(okPut.bodyAsText())
+        assertEquals("alice_99", updatedA.handle)
+        assertEquals("alice@gmail.com", updatedA.email)
+
+        // Пользователь B видит, что @alice_99 занят и при PUT получает 409 Conflict
+        val takenCheck = client.get("/api/v1/users/check-handle?handle=alice_99") {
+            header(HttpHeaders.Authorization, "Bearer $tokenB")
+        }
+        val takenDto = json.decodeFromString<CheckHandleResponse>(takenCheck.bodyAsText())
+        assertTrue(takenDto.valid)
+        assertFalse(takenDto.available)
+        assertEquals("TAKEN", takenDto.reason)
+
+        val conflictPut = client.put("/api/v1/users/me/handle") {
+            header(HttpHeaders.Authorization, "Bearer $tokenB")
+            contentType(ContentType.Application.Json)
+            setBody("""{"handle":"alice_99"}""")
+        }
+        assertEquals(HttpStatusCode.Conflict, conflictPut.status)
+
+        // Гонка (concurrent race condition): 2 пользователя одновременно пытаются занять один и тот же handle
+        val raceUsers = (1..2).map { idx ->
+            val uid = "race_$idx"
+            transaction(testDb) {
+                Users.insert {
+                    it[id] = uid
+                    it[username] = "Racer$idx"
+                }
+            }
+            uid
+        }
+        val barrier = java.util.concurrent.CyclicBarrier(2)
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(2)
+        val futures = raceUsers.map { uid ->
+            pool.submit<String> {
+                barrier.await()
+                try {
+                    updateUserHandle(uid, "same_race_handle")
+                    "OK"
+                } catch (c: ConflictException) {
+                    "CONFLICT"
+                }
+            }
+        }
+        val outcomes = futures.map { it.get(10, java.util.concurrent.TimeUnit.SECONDS) }.sorted()
+        pool.shutdown()
+        assertEquals(listOf("CONFLICT", "OK"), outcomes)
+    }
+
+    @Test
+    fun `user search matches handle prefix and name, excludes self and null handles, hides foreign emails, caps at 20`() = testApplication {
+        val testDb = Database.connect(
+            url = "jdbc:h2:mem:test_user_search_${UUID.randomUUID()};DB_CLOSE_DELAY=-1",
+            driver = "org.h2.Driver"
+        )
+        var selfToken = ""
+        transaction(testDb) {
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions)
+            Users.insert {
+                it[id] = "self_user"
+                it[username] = "Alice Self"
+                it[handle] = "alice_self"
+                it[email] = "self@example.com"
+                it[photoUrl] = "https://img.example.com/self.png"
+            }
+            Users.insert {
+                it[id] = "no_handle_user"
+                it[username] = "Alice NoHandle"
+                it[handle] = null
+                it[email] = "nohandle@example.com"
+            }
+            for (i in 1..25) {
+                Users.insert {
+                    it[id] = "user_$i"
+                    it[username] = "Friend $i"
+                    it[handle] = "alpha_${i.toString().padStart(2, '0')}"
+                    it[email] = "secret_$i@example.com"
+                    it[googleSub] = "sub_$i"
+                    it[photoUrl] = "https://img.example.com/$i.png"
+                }
+            }
+            selfToken = createSessionToken("self_user")
+        }
+
+        application {
+            installSerializationAndErrors()
+            routing { capsuleRoutes() }
+        }
+
+        val json = Json { ignoreUnknownKeys = true }
+
+        // Поиск по префиксу @alpha -> максимум 20, без self, без пользователей без handle, email == null
+        val respHandlePrefix = client.get("/api/v1/users?query=@alpha") {
+            header(HttpHeaders.Authorization, "Bearer $selfToken")
+        }
+        assertEquals(HttpStatusCode.OK, respHandlePrefix.status)
+        val rawBody = respHandlePrefix.bodyAsText()
+        assertFalse(rawBody.contains("secret_"), "Foreign email must never appear in response")
+        assertFalse(rawBody.contains("sub_"), "Foreign googleSub must never appear in response")
+
+        val listByPrefix = json.decodeFromString<List<UserDto>>(rawBody)
+        assertEquals(20, listByPrefix.size)
+        assertTrue(listByPrefix.none { it.id == "self_user" })
+        assertTrue(listByPrefix.none { it.id == "no_handle_user" })
+        assertTrue(listByPrefix.all { it.handle?.startsWith("alpha_") == true })
+        assertTrue(listByPrefix.all { it.email == null })
+        assertTrue(listByPrefix.all { it.avatarUrl != null })
+
+        // Поиск без '@' находит по имени и исключает пользователей без handle и самого себя
+        val respName = client.get("/api/v1/users?query=Alice") {
+            header(HttpHeaders.Authorization, "Bearer $selfToken")
+        }
+        val listByName = json.decodeFromString<List<UserDto>>(respName.bodyAsText())
+        assertEquals(0, listByName.size)
+
+        val respFriend = client.get("/api/v1/users?query=Friend%2015") {
+            header(HttpHeaders.Authorization, "Bearer $selfToken")
+        }
+        val listFriend = json.decodeFromString<List<UserDto>>(respFriend.bodyAsText())
+        assertEquals(listOf("user_15"), listFriend.map { it.id })
+        assertNull(listFriend.first().email)
+    }
+
+    @Test
+    fun `POST api v1 auth google rejects invalid idToken with 401 and preserves existing handle`() = testApplication {
+        val testDb = Database.connect(
+            url = "jdbc:h2:mem:test_google_auth_${UUID.randomUUID()};DB_CLOSE_DELAY=-1",
+            driver = "org.h2.Driver"
+        )
+        transaction(testDb) {
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions)
+            Users.insert {
+                it[id] = "existing_uid"
+                it[username] = "Old Name"
+                it[handle] = "existing_handle"
+                it[googleSub] = "google_sub_777"
+                it[email] = "owner@example.com"
+                it[displayName] = "Old Name"
+            }
+        }
+
+        application {
+            installSerializationAndErrors()
+            routing { capsuleRoutes() }
+        }
+
+        // Реальный GoogleIdTokenVerifier с невалидным токеном -> 401 Unauthorized
+        System.setProperty("GOOGLE_WEB_CLIENT_ID", "test-client-id.apps.googleusercontent.com")
+        try {
+            val badResponse = client.post("/api/v1/auth/google") {
+                contentType(ContentType.Application.Json)
+                setBody("""{"idToken":"invalid.jwt.token"}""")
+            }
+            assertEquals(HttpStatusCode.Unauthorized, badResponse.status)
+        } finally {
+            System.clearProperty("GOOGLE_WEB_CLIENT_ID")
+        }
+
+        // Повторный вход существующего пользователя сохраняет выбранный @handle
+        val prevVerifier = googleTokenVerifierFn
+        googleTokenVerifierFn = { _ ->
+            VerifiedGoogleProfile(
+                googleSub = "google_sub_777",
+                email = "owner@example.com",
+                displayName = "New Display Name",
+                photoUrl = "https://img.example.com/avatar.png"
+            )
+        }
+        try {
+            val okResponse = client.post("/api/v1/auth/google") {
+                contentType(ContentType.Application.Json)
+                setBody("""{"idToken":"mock_verified_jwt_for_unit_test"}""")
+            }
+            assertEquals(HttpStatusCode.OK, okResponse.status)
+            val json = Json { ignoreUnknownKeys = true }
+            val authDto = json.decodeFromString<AuthResponse>(okResponse.bodyAsText())
+            assertEquals("existing_handle", authDto.user.handle)
+            assertEquals("https://img.example.com/avatar.png", authDto.user.avatarUrl)
+            assertEquals("owner@example.com", authDto.user.email)
+        } finally {
+            googleTokenVerifierFn = prevVerifier
+        }
     }
 }
 

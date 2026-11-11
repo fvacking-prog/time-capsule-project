@@ -63,6 +63,7 @@ import com.timecapsule.shared.UserDto
 @Composable
 fun TimeCapsuleTopBar(
     currentUsername: String,
+    currentUserHandle: String?,
     currentPhotoUrl: String?,
     onProfileClick: () -> Unit,
     onSettingsClick: () -> Unit
@@ -82,9 +83,11 @@ fun TimeCapsuleTopBar(
             AssistChip(
                 onClick = onProfileClick,
                 label = {
+                    val displayChip = currentUserHandle?.takeIf { it.isNotBlank() }?.let { "@$it" }
+                        ?: currentUsername
                     Text(
-                        text = if (currentUsername.isNotBlank()) {
-                            stringResource(R.string.profile_chip_format, currentUsername)
+                        text = if (displayChip.isNotBlank()) {
+                            stringResource(R.string.profile_chip_format, displayChip)
                         } else {
                             stringResource(R.string.profile_select_prompt)
                         },
@@ -174,9 +177,10 @@ fun ProfileSelectionDialog(
                                 .padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (!currentUser.photoUrl.isNullOrBlank()) {
+                            val avatarModel = currentUser.avatarUrl ?: currentUser.photoUrl
+                            if (!avatarModel.isNullOrBlank()) {
                                 AsyncImage(
-                                    model = currentUser.photoUrl,
+                                    model = avatarModel,
                                     contentDescription = currentUser.username,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
@@ -199,6 +203,14 @@ fun ProfileSelectionDialog(
                                     fontWeight = FontWeight.Bold,
                                     color = TokyoOnBackground
                                 )
+                                if (!currentUser.handle.isNullOrBlank()) {
+                                    Text(
+                                        text = "@${currentUser.handle}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = TokyoPrimary
+                                    )
+                                }
                                 if (!currentUser.email.isNullOrBlank()) {
                                     Text(
                                         text = stringResource(R.string.profile_email_format, currentUser.email),

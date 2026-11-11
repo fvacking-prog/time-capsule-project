@@ -44,6 +44,7 @@ import com.example.cyberpunk.ui.components.ServerSettingsDialog
 import com.example.cyberpunk.ui.components.TimeCapsuleTopBar
 import com.example.cyberpunk.ui.screens.CapsuleStagesTimeline
 import com.example.cyberpunk.ui.screens.CapsulesShelfScreen
+import com.example.cyberpunk.ui.screens.ChooseHandleScreen
 import com.example.cyberpunk.ui.screens.CreateCapsuleScreen
 import com.example.cyberpunk.ui.screens.EnterPinDialog
 import com.example.cyberpunk.ui.screens.HomeScreen
@@ -183,6 +184,31 @@ fun TimeCapsuleApp(
         return
     }
 
+    if (uiState.currentUser?.handle.isNullOrBlank()) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = TokyoBackground,
+            snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+        ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+                ChooseHandleScreen(
+                    currentUser = uiState.currentUser,
+                    handleInput = uiState.handleInput,
+                    handleStatus = uiState.handleCheckStatus,
+                    isSaving = uiState.isSavingHandle,
+                    onHandleInputChange = capsuleViewModel::updateHandleInput,
+                    onSubmit = capsuleViewModel::submitHandle,
+                    onLogout = capsuleViewModel::logout
+                )
+            }
+        }
+        return
+    }
+
     if (uiState.showProfileDialog) {
         ProfileSelectionDialog(
             currentUser = uiState.currentUser,
@@ -220,6 +246,7 @@ fun TimeCapsuleApp(
         topBar = {
             TimeCapsuleTopBar(
                 currentUsername = uiState.currentUsername,
+                currentUserHandle = uiState.currentUserHandle,
                 currentPhotoUrl = uiState.currentPhotoUrl,
                 onProfileClick = capsuleViewModel::openProfileDialog,
                 onSettingsClick = capsuleViewModel::openSettingsDialog

@@ -6,11 +6,13 @@ import com.google.api.client.json.gson.GsonFactory
 import com.timecapsule.shared.AuthResponse
 import com.timecapsule.shared.CapsuleDto
 import com.timecapsule.shared.CapsuleStageDto
+import com.timecapsule.shared.CheckHandleResponse
 import com.timecapsule.shared.CheckInRequest
 import com.timecapsule.shared.CreateCapsuleRequest
 import com.timecapsule.shared.GoogleAuthRequest
 import com.timecapsule.shared.MessageResponse
 import com.timecapsule.shared.ParticipantStatusDto
+import com.timecapsule.shared.UpdateHandleRequest
 import com.timecapsule.shared.UserDto
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
@@ -22,11 +24,13 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
 import io.ktor.server.routing.route
 import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.inList
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.neq
 import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
@@ -164,7 +168,7 @@ fun Route.capsuleRoutes() {
                 throw IllegalArgumentException("idToken must not be blank")
             }
 
-            val verified = verifyGoogleIdToken(rawIdToken)
+            val verified = googleTokenVerifierFn(rawIdToken)
             val authResponse = transaction {
                 val now = System.currentTimeMillis()
                 val existingRow = Users
@@ -177,6 +181,7 @@ fun Route.capsuleRoutes() {
                     Users.insert {
                         it[id] = newId
                         it[username] = verified.displayName
+                        it[handle] = null
                         it[googleSub] = verified.googleSub
                         it[email] = verified.email
                         it[displayName] = verified.displayName
@@ -195,12 +200,11 @@ fun Route.capsuleRoutes() {
                 }
 
                 val token = createSessionToken(userId, now)
-                val userDto = UserDto(
-                    id = userId,
-                    username = verified.displayName,
-                    email = verified.email,
-                    photoUrl = verified.photoUrl
-                )
+                val userDto = Users
+                    .selectAll()
+                    .where { Users.id eq userId }
+                    .single()
+                    .toUserDto(includeEmail = true)
                 AuthResponse(user = userDto, sessionToken = token)
             }
             call.respond(authResponse)
@@ -240,29 +244,27 @@ fun Route.capsuleRoutes() {
         call.respond(MessageResponse("Все данные пользователя успешно удалены"))
     }
 
-    get("/api/v1/users") {
-        val currentUserId = call.requireAuthenticatedUserId()
-        val query = call.request.queryParameters["query"]?.trim().orEmpty()
-        val users = transaction {
-            val allRows = Users.selectAll().toList()
-            allRows
-                .filter { row ->
-                    if (query.isEmpty()) {
-                        true
-                    } else {
-                        val name = row[Users.displayName] ?: row[Users.username]
-                        val username = row[Users.username]
-                        name.contains(query, ignoreCase = true) ||
-                            username.contains(query, ignoreCase = true)
-                    }
-                }
-                .take(50)
-                .map { row ->
-                    val isSelf = row[Users.id] == currentUserId
-                    row.toUserDto(includeEmail = isSelf)
-                }
+    route("/api/v1/users") {
+        get("/check-handle") {
+            val currentUserId = call.requireAuthenticatedUserId()
+            val rawHandle = call.request.queryParameters["handle"].orEmpty()
+            val response = checkHandleAvailability(rawHandle, currentUserId)
+            call.respond(response)
         }
-        call.respond(users)
+
+        put("/me/handle") {
+            val currentUserId = call.requireAuthenticatedUserId()
+            val request = call.receive<UpdateHandleRequest>()
+            val updated = updateUserHandle(currentUserId, request.handle)
+            call.respond(updated)
+        }
+
+        get {
+            val currentUserId = call.requireAuthenticatedUserId()
+            val query = call.request.queryParameters["query"].orEmpty()
+            val users = searchUsersByQuery(currentUserId, query)
+            call.respond(users)
+        }
     }
 
     route("/api/v1/capsules") {
@@ -452,7 +454,7 @@ fun Route.capsuleRoutes() {
     }
 }
 
-private data class VerifiedGoogleProfile(
+internal data class VerifiedGoogleProfile(
     val googleSub: String,
     val email: String,
     val displayName: String,
@@ -462,7 +464,9 @@ private data class VerifiedGoogleProfile(
 private val googleTransport = NetHttpTransport()
 private val googleJsonFactory = GsonFactory.getDefaultInstance()
 
-private fun verifyGoogleIdToken(idTokenString: String): VerifiedGoogleProfile {
+internal var googleTokenVerifierFn: (String) -> VerifiedGoogleProfile = ::verifyGoogleIdToken
+
+internal fun verifyGoogleIdToken(idTokenString: String): VerifiedGoogleProfile {
     val webClientId = (System.getenv("GOOGLE_WEB_CLIENT_ID") ?: System.getProperty("GOOGLE_WEB_CLIENT_ID"))
         ?.trim()
         .orEmpty()
@@ -556,12 +560,128 @@ internal fun ApplicationCall.requireAuthenticatedUserId(): String {
 internal fun ResultRow.toUserDto(includeEmail: Boolean): UserDto {
     val rawEmail = this[Users.email]
     val display = this[Users.displayName]?.takeIf { it.isNotBlank() } ?: this[Users.username]
+    val photo = this[Users.photoUrl]
     return UserDto(
         id = this[Users.id],
         username = display,
         email = if (includeEmail) rawEmail else null,
-        photoUrl = this[Users.photoUrl]
+        photoUrl = photo,
+        handle = this[Users.handle],
+        avatarUrl = photo
     )
+}
+
+internal fun checkHandleAvailability(rawHandle: String, currentUserId: String? = null): CheckHandleResponse {
+    val normalized = HandleUtils.normalizeHandle(rawHandle)
+    when (HandleUtils.validate(normalized)) {
+        HandleValidationStatus.INVALID_FORMAT -> {
+            return CheckHandleResponse(
+                handle = normalized,
+                valid = false,
+                available = false,
+                reason = "INVALID_FORMAT"
+            )
+        }
+        HandleValidationStatus.RESERVED -> {
+            return CheckHandleResponse(
+                handle = normalized,
+                valid = false,
+                available = false,
+                reason = "RESERVED"
+            )
+        }
+        HandleValidationStatus.OK -> Unit
+    }
+
+    val takenByOther = transaction {
+        if (currentUserId != null) {
+            Users.selectAll()
+                .where { (Users.handle eq normalized) and (Users.id neq currentUserId) }
+                .count() > 0L
+        } else {
+            Users.selectAll()
+                .where { Users.handle eq normalized }
+                .count() > 0L
+        }
+    }
+
+    return CheckHandleResponse(
+        handle = normalized,
+        valid = true,
+        available = !takenByOther,
+        reason = if (takenByOther) "TAKEN" else "OK"
+    )
+}
+
+internal fun updateUserHandle(userId: String, rawHandle: String): UserDto {
+    val normalized = HandleUtils.normalizeHandle(rawHandle)
+    when (HandleUtils.validate(normalized)) {
+        HandleValidationStatus.INVALID_FORMAT ->
+            throw IllegalArgumentException("Никнейм должен содержать 4–24 символа: строчные латинские буквы, цифры или _")
+        HandleValidationStatus.RESERVED ->
+            throw IllegalArgumentException("Никнейм @$normalized зарезервирован")
+        HandleValidationStatus.OK -> Unit
+    }
+
+    try {
+        return transaction {
+            val takenByOther = Users.selectAll()
+                .where { (Users.handle eq normalized) and (Users.id neq userId) }
+                .count() > 0L
+            if (takenByOther) {
+                throw ConflictException("Никнейм @$normalized уже занят")
+            }
+
+            val updatedCount = Users.update({ Users.id eq userId }) {
+                it[handle] = normalized
+            }
+            if (updatedCount == 0) {
+                throw UnauthorizedException("User not found for session")
+            }
+
+            Users.selectAll()
+                .where { Users.id eq userId }
+                .single()
+                .toUserDto(includeEmail = true)
+        }
+    } catch (e: ConflictException) {
+        throw e
+    } catch (e: Exception) {
+        if (HandleUtils.isUniqueConstraintViolation(e)) {
+            throw ConflictException("Никнейм @$normalized уже занят")
+        }
+        throw e
+    }
+}
+
+internal fun searchUsersByQuery(currentUserId: String, rawQuery: String): List<UserDto> {
+    val trimmed = rawQuery.trim()
+    val isHandleSearch = trimmed.startsWith("@")
+    val cleanQuery = trimmed.removePrefix("@").trim()
+    val cleanLower = cleanQuery.lowercase()
+
+    return transaction {
+        Users.selectAll()
+            .where { (Users.id neq currentUserId) and Users.handle.isNotNull() }
+            .toList()
+            .filter { row ->
+                val userHandle = row[Users.handle]?.trim()?.takeIf { it.isNotEmpty() } ?: return@filter false
+                if (cleanQuery.isEmpty()) {
+                    true
+                } else if (isHandleSearch) {
+                    userHandle.startsWith(cleanLower)
+                } else {
+                    val displayName = row[Users.displayName]?.trim().orEmpty()
+                    val username = row[Users.username].trim()
+                    userHandle.startsWith(cleanLower) ||
+                        displayName.contains(cleanQuery, ignoreCase = true) ||
+                        username.contains(cleanQuery, ignoreCase = true)
+                }
+            }
+            .sortedBy { it[Users.handle] }
+            .take(20)
+            .map { row -> row.toUserDto(includeEmail = false) }
+    }
 }
 
 private const val MAX_ID_LENGTH = 36

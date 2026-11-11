@@ -211,7 +211,7 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    val photoUrl = uiState.currentUser?.photoUrl
+                    val photoUrl = uiState.currentUser?.avatarUrl ?: uiState.currentUser?.photoUrl
                     if (!photoUrl.isNullOrBlank()) {
                         AsyncImage(
                             model = photoUrl,
@@ -245,6 +245,16 @@ fun SettingsScreen(
                                 color = TokyoOnBackground
                             )
                         )
+                        val handle = uiState.currentUser?.handle
+                        if (!handle.isNullOrBlank()) {
+                            Text(
+                                text = "@$handle",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TokyoAccent
+                                )
+                            )
+                        }
                         val email = uiState.currentUser?.email
                         if (!email.isNullOrBlank()) {
                             Text(

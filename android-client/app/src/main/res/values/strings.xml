@@ -277,4 +277,19 @@
     <string name="about_terms_text">Сервис предназначен для сохранения персональных и совместных воспоминаний. Запрещается сохранение противоправного контента. Приложение гарантирует криптографическую защиту запечатанных данных.</string>
     <string name="export_chooser_title">Экспорт архива Time Capsule</string>
     <string name="export_copied_notice">Архив капсул времени экспортирован в формате JSON</string>
+
+    <!-- Handle Selection & Profile -->
+    <string name="choose_handle_title">Выберите @никнейм</string>
+    <string name="choose_handle_subtitle">Здравствуйте, %1$s! Задайте уникальный @handle, чтобы друзья могли находить вас и отправлять капсулы времени.</string>
+    <string name="choose_handle_label">Ваш @handle</string>
+    <string name="choose_handle_placeholder">alice_99</string>
+    <string name="choose_handle_rules">От 4 до 24 символов: строчные латинские буквы (a-z), цифры и _</string>
+    <string name="handle_status_checking">Проверка доступности…</string>
+    <string name="handle_status_free">Никнейм @%1$s свободен</string>
+    <string name="handle_status_taken">Никнейм @%1$s занят</string>
+    <string name="handle_status_reserved">Никнейм @%1$s зарезервирован (занят)</string>
+    <string name="handle_status_invalid_format">Неверный формат (нужно 4–24 символа a-z, 0-9, _)</string>
+    <string name="handle_status_error">Не удалось проверить никнейм. Проверьте подключение.</string>
+    <string name="btn_save_handle">Продолжить</string>
+    <string name="handle_saved_success">Никнейм @%1$s сохранён</string>
 </resources>

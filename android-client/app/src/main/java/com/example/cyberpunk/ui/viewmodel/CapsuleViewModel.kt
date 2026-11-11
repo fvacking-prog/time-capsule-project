@@ -12,6 +12,8 @@ import com.example.cyberpunk.R
 import com.example.cyberpunk.data.ApiConfig
 import com.example.cyberpunk.data.CapsuleRepository
 import com.example.cyberpunk.data.GeoHelper
+import com.example.cyberpunk.data.HandleLocalValidation
+import com.example.cyberpunk.data.HandleValidator
 import com.example.cyberpunk.data.LocationProvider
 import com.example.cyberpunk.data.RemoteCapsuleRepository
 import com.example.cyberpunk.data.SessionExpiredException
@@ -72,11 +74,24 @@ data class CreateCapsuleFormState(
     val isSubmitting: Boolean = false
 )
 
+enum class HandleCheckStatus {
+    IDLE,
+    CHECKING,
+    FREE,
+    TAKEN,
+    RESERVED,
+    INVALID_FORMAT,
+    ERROR
+}
+
 data class CapsuleUiState(
     val isAuthInitialized: Boolean = false,
     val isAuthenticated: Boolean = false,
     val isAuthenticating: Boolean = false,
     val currentUser: UserDto? = null,
+    val handleInput: String = "",
+    val handleCheckStatus: HandleCheckStatus = HandleCheckStatus.IDLE,
+    val isSavingHandle: Boolean = false,
     val availableUsers: List<UserDto> = emptyList(),
     val isLoading: Boolean = true,
     val isSyncing: Boolean = false,
@@ -133,8 +148,11 @@ data class CapsuleUiState(
     val currentUsername: String
         get() = currentUser?.username ?: ""
 
+    val currentUserHandle: String?
+        get() = currentUser?.handle
+
     val currentPhotoUrl: String?
-        get() = currentUser?.photoUrl
+        get() = currentUser?.avatarUrl ?: currentUser?.photoUrl
 }
 
 class CapsuleViewModel(application: Application) : AndroidViewModel(application) {
@@ -157,6 +175,7 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private var userSearchJob: Job? = null
+    private var handleCheckJob: Job? = null
 
     init {
         ApiConfig.init(appContext)
@@ -177,7 +196,7 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             val savedSession = ApiConfig.loadSession(appContext)
             if (savedSession != null) {
-                val (user, _) = savedSession
+                val (user, token) = savedSession
                 _uiState.update { state ->
                     state.copy(
                         isAuthInitialized = true,
@@ -189,8 +208,13 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
                         )
                     )
                 }
-                loadCapsules()
-                refreshUsersList("")
+                refreshMeInBackground(token)
+                if (!user.handle.isNullOrBlank()) {
+                    loadCapsules()
+                    refreshUsersList("")
+                } else {
+                    _uiState.update { it.copy(isLoading = false) }
+                }
             } else {
                 _uiState.update { state ->
                     state.copy(
@@ -199,6 +223,31 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
                         isLoading = false
                     )
                 }
+            }
+        }
+    }
+
+    private fun refreshMeInBackground(token: String) {
+        viewModelScope.launch {
+            try {
+                val freshUser = remoteRepository.getMe()
+                ApiConfig.saveSession(appContext, freshUser, token)
+                _uiState.update { state ->
+                    state.copy(
+                        currentUser = freshUser,
+                        availableUsers = mergeUsers(state.availableUsers, listOf(freshUser))
+                    )
+                }
+                if (!freshUser.handle.isNullOrBlank() && _uiState.value.capsules.isEmpty()) {
+                    loadCapsules()
+                    refreshUsersList("")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: SessionExpiredException) {
+                handleUnauthorized()
+            } catch (_: Exception) {
+                // Остаёмся на кэшированной сессии при временной потере сети
             }
         }
     }
@@ -246,14 +295,21 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
                     state.copy(
                         isAuthenticated = true,
                         currentUser = authResponse.user,
+                        handleInput = "",
+                        handleCheckStatus = HandleCheckStatus.IDLE,
+                        isSavingHandle = false,
                         availableUsers = mergeUsers(state.availableUsers, listOf(authResponse.user)),
                         createForm = state.createForm.copy(
                             selectedParticipantIds = state.createForm.selectedParticipantIds + authResponse.user.id
                         )
                     )
                 }
-                loadCapsules()
-                refreshUsersList("")
+                if (!authResponse.user.handle.isNullOrBlank()) {
+                    loadCapsules()
+                    refreshUsersList("")
+                } else {
+                    _uiState.update { it.copy(isLoading = false) }
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -265,11 +321,112 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun updateHandleInput(raw: String) {
+        val clean = HandleValidator.sanitizeInput(raw)
+        handleCheckJob?.cancel()
+
+        when (HandleValidator.validateLocal(clean)) {
+            HandleLocalValidation.EMPTY -> {
+                _uiState.update {
+                    it.copy(handleInput = clean, handleCheckStatus = HandleCheckStatus.IDLE)
+                }
+            }
+            HandleLocalValidation.INVALID_FORMAT -> {
+                _uiState.update {
+                    it.copy(handleInput = clean, handleCheckStatus = HandleCheckStatus.INVALID_FORMAT)
+                }
+            }
+            HandleLocalValidation.RESERVED -> {
+                _uiState.update {
+                    it.copy(handleInput = clean, handleCheckStatus = HandleCheckStatus.RESERVED)
+                }
+            }
+            HandleLocalValidation.VALID -> {
+                _uiState.update {
+                    it.copy(handleInput = clean, handleCheckStatus = HandleCheckStatus.CHECKING)
+                }
+                handleCheckJob = viewModelScope.launch {
+                    delay(400L)
+                    try {
+                        val response = remoteRepository.checkHandle(clean)
+                        if (_uiState.value.handleInput != clean) return@launch
+                        val nextStatus = when {
+                            !response.valid && response.reason == "RESERVED" -> HandleCheckStatus.RESERVED
+                            !response.valid -> HandleCheckStatus.INVALID_FORMAT
+                            response.available -> HandleCheckStatus.FREE
+                            else -> HandleCheckStatus.TAKEN
+                        }
+                        _uiState.update { it.copy(handleCheckStatus = nextStatus) }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: SessionExpiredException) {
+                        handleUnauthorized()
+                    } catch (_: Exception) {
+                        if (_uiState.value.handleInput == clean) {
+                            _uiState.update { it.copy(handleCheckStatus = HandleCheckStatus.ERROR) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun submitHandle() {
+        val state = _uiState.value
+        if (state.isSavingHandle) return
+        val clean = HandleValidator.sanitizeInput(state.handleInput)
+        if (HandleValidator.validateLocal(clean) != HandleLocalValidation.VALID) {
+            _uiState.update { it.copy(handleCheckStatus = HandleCheckStatus.INVALID_FORMAT) }
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSavingHandle = true) }
+            try {
+                val updatedUser = remoteRepository.updateHandle(clean)
+                val token = ApiConfig.sessionToken
+                if (!token.isNullOrBlank()) {
+                    ApiConfig.saveSession(appContext, updatedUser, token)
+                }
+                _uiState.update { current ->
+                    current.copy(
+                        currentUser = updatedUser,
+                        handleInput = "",
+                        handleCheckStatus = HandleCheckStatus.IDLE,
+                        isSavingHandle = false,
+                        availableUsers = mergeUsers(current.availableUsers, listOf(updatedUser))
+                    )
+                }
+                _snackbarEvents.tryEmit(
+                    appContext.getString(R.string.handle_saved_success, updatedUser.handle ?: clean)
+                )
+                loadCapsules()
+                refreshUsersList("")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: SessionExpiredException) {
+                _uiState.update { it.copy(isSavingHandle = false) }
+                handleUnauthorized()
+            } catch (e: Exception) {
+                val msg = e.localizedMessage ?: "Не удалось сохранить @handle"
+                val isTakenError = msg.contains("занят", ignoreCase = true) || msg.contains("409")
+                _uiState.update {
+                    it.copy(
+                        isSavingHandle = false,
+                        handleCheckStatus = if (isTakenError) HandleCheckStatus.TAKEN else HandleCheckStatus.ERROR
+                    )
+                }
+                _snackbarEvents.tryEmit(msg)
+            }
+        }
+    }
+
     fun onGoogleSignInError(message: String) {
         _snackbarEvents.tryEmit(message)
     }
 
     fun logout() {
+        handleCheckJob?.cancel()
         val credentialManager = CredentialManager.create(appContext)
         viewModelScope.launch {
             try {
@@ -283,6 +440,9 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
                     isAuthenticated = false,
                     isAuthenticating = false,
                     currentUser = null,
+                    handleInput = "",
+                    handleCheckStatus = HandleCheckStatus.IDLE,
+                    isSavingHandle = false,
                     showProfileDialog = false,
                     capsules = emptyList(),
                     selectedCapsuleId = null,

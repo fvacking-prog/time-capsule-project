@@ -7,6 +7,7 @@ import org.jetbrains.exposed.sql.Table
 object Users : Table("users") {
     val id = varchar("id", 36)
     val username = varchar("username", 128)
+    val handle = varchar("handle", 32).uniqueIndex().nullable()
     val googleSub = varchar("google_sub", 128).uniqueIndex().nullable()
     val email = varchar("email", 255).nullable()
     val displayName = varchar("display_name", 128).nullable()
