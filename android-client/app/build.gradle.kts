@@ -199,6 +199,7 @@ dependencies {
     implementation(libs.googleid)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.coil.compose)
+    implementation(libs.androidx.work.runtime.ktx)
 
     testImplementation(kotlin("test"))
     debugImplementation(libs.androidx.ui.tooling)

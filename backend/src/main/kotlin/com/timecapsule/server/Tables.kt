@@ -63,6 +63,15 @@ object CapsuleParticipants : Table("capsule_participants") {
     val lastSeenAt = long("last_seen_at").nullable()
     val openedAt = long("opened_at").nullable()
     val archived = bool("archived").default(false)
+    val role = varchar("role", 16).default("MEMBER")
 
     override val primaryKey = PrimaryKey(capsuleId, userId)
+}
+
+object Blocks : Table("blocks") {
+    val blockerId = varchar("blocker_id", 36).references(Users.id, onDelete = ReferenceOption.CASCADE)
+    val blockedUserId = varchar("blocked_user_id", 36).references(Users.id, onDelete = ReferenceOption.CASCADE)
+    val createdAt = long("created_at")
+
+    override val primaryKey = PrimaryKey(blockerId, blockedUserId)
 }

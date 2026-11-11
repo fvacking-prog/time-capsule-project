@@ -292,4 +292,32 @@
     <string name="handle_status_error">Не удалось проверить никнейм. Проверьте подключение.</string>
     <string name="btn_save_handle">Продолжить</string>
     <string name="handle_saved_success">Никнейм @%1$s сохранён</string>
+
+    <!-- Phase 3: Inbox, Handle Recipients, Blocks, Notifications -->
+    <string name="tab_inbox">Входящие</string>
+    <string name="empty_inbox_title">Во входящих пока пусто</string>
+    <string name="empty_inbox_desc">Когда друзья отправят вам капсулу по @%1$s, она появится здесь.</string>
+    <string name="sender_handle_format">От: @%1$s</string>
+    <string name="sender_unknown_format">Отправитель скрыт</string>
+    <string name="recipients_list_format">Кому: %1$s</string>
+    <string name="status_delivered">Доставлено</string>
+    <string name="status_opened_by_recipient">Открыто получателем • %1$s</string>
+    <string name="status_opened_by_many">Открыто получателями: %1$d из %2$d</string>
+    <string name="sealed_until_format">Текст зашифрован и скрыт до %1$s</string>
+    <string name="menu_block_sender">Заблокировать отправителя</string>
+    <string name="dialog_block_sender_title">Заблокировать отправителя?</string>
+    <string name="dialog_block_sender_msg">Вы перестанете получать капсулы от %1$s, а текущие входящие от этого пользователя скроются.</string>
+    <string name="btn_block_sender_confirm">Заблокировать</string>
+    <string name="sender_blocked_success">Отправитель заблокирован</string>
+    <string name="field_recipients_handle_label">Кому (по @handle)</string>
+    <string name="field_recipients_handle_placeholder">Введите @handle или имя</string>
+    <string name="recipients_self_hint">Оставьте пустым — капсула будет только для вас</string>
+    <string name="recipients_max_limit">Можно выбрать не более 10 получателей</string>
+    <string name="recipients_selected_count">Выбрано получателей: %1$d / 10</string>
+    <string name="notification_channel_name">Капсулы времени</string>
+    <string name="notification_channel_desc">Локальные оповещения о наступлении даты открытия капсул</string>
+    <string name="notification_default_title">Капсула времени</string>
+    <string name="notification_unlock_title">Капсула готова к открытию</string>
+    <string name="notification_unlock_body">Капсула «%1$s» достигла даты открытия</string>
+    <string name="notification_inbox_unlock_body">Входящая капсула «%1$s» от @%2$s готова к открытию</string>
 </resources>

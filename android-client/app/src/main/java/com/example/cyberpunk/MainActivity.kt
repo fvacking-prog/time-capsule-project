@@ -14,6 +14,8 @@ import androidx.compose.material.icons.filled.AllInbox
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -31,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -55,6 +58,7 @@ import com.example.cyberpunk.ui.screens.RadarScreen
 import com.example.cyberpunk.ui.screens.SetPinDialog
 import com.example.cyberpunk.ui.screens.SettingsScreen
 import com.example.cyberpunk.ui.theme.TimeCapsuleTheme
+import com.example.cyberpunk.ui.theme.TokyoAccent
 import com.example.cyberpunk.ui.theme.TokyoBackground
 import com.example.cyberpunk.ui.theme.TokyoOnSurface
 import com.example.cyberpunk.ui.theme.TokyoPrimary
@@ -297,10 +301,26 @@ fun TimeCapsuleApp(
                         }
                     },
                     icon = {
-                        Icon(
-                            imageVector = Icons.Default.AllInbox,
-                            contentDescription = stringResource(R.string.nav_capsules)
-                        )
+                        BadgedBox(
+                            badge = {
+                                if (uiState.unreadInboxCount > 0) {
+                                    Badge(
+                                        containerColor = TokyoAccent,
+                                        contentColor = TokyoBackground
+                                    ) {
+                                        Text(
+                                            text = if (uiState.unreadInboxCount > 99) "99+" else "${uiState.unreadInboxCount}",
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AllInbox,
+                                contentDescription = stringResource(R.string.nav_capsules)
+                            )
+                        }
                     },
                     label = { Text(stringResource(R.string.nav_capsules)) },
                     colors = NavigationBarItemDefaults.colors(
@@ -449,7 +469,8 @@ fun TimeCapsuleApp(
                     },
                     onNavigateToCreate = {
                         navController.navigate(ROUTE_CREATE)
-                    }
+                    },
+                    onBlockSender = capsuleViewModel::blockSender
                 )
             }
 
@@ -480,7 +501,8 @@ fun TimeCapsuleApp(
                         }
                     },
                     onArchiveCapsule = capsuleViewModel::archiveCapsule,
-                    onUnarchiveCapsule = capsuleViewModel::unarchiveCapsule
+                    onUnarchiveCapsule = capsuleViewModel::unarchiveCapsule,
+                    onBlockSender = capsuleViewModel::blockSender
                 )
             }
 
@@ -493,6 +515,9 @@ fun TimeCapsuleApp(
                     onTitleChange = capsuleViewModel::updateCreateTitle,
                     onKindChange = capsuleViewModel::updateCreateKind,
                     onRecipientChange = capsuleViewModel::updateCreateRecipient,
+                    onRecipientSearchQueryChange = capsuleViewModel::updateRecipientSearchQuery,
+                    onAddRecipient = capsuleViewModel::addRecipient,
+                    onRemoveRecipient = capsuleViewModel::removeRecipient,
                     onTagsChange = capsuleViewModel::updateCreateTags,
                     onMessageChange = capsuleViewModel::updateCreateMessage,
                     onDateChipClick = capsuleViewModel::setCreateDateChip,

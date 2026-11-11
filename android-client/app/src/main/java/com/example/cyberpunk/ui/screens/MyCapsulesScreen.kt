@@ -17,7 +17,8 @@ fun MyCapsulesScreen(
     onTabSelected: (Int) -> Unit = {},
     onOpenCapsule: (String) -> Unit = onOpenTimeline,
     onArchiveCapsule: (String) -> Unit = {},
-    onUnarchiveCapsule: (String) -> Unit = {}
+    onUnarchiveCapsule: (String) -> Unit = {},
+    onBlockSender: (String) -> Unit = {}
 ) {
     CapsulesShelfScreen(
         uiState = uiState,
@@ -30,6 +31,7 @@ fun MyCapsulesScreen(
         onUnarchiveCapsule = onUnarchiveCapsule,
         onOpenRadar = onOpenRadar,
         onOpenTimeline = onOpenTimeline,
-        onNavigateToCreate = onNavigateToCreate
+        onNavigateToCreate = onNavigateToCreate,
+        onBlockSender = onBlockSender
     )
 }

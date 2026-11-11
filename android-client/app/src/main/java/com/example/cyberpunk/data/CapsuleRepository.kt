@@ -2,6 +2,7 @@ package com.example.cyberpunk.data
 
 import com.example.cyberpunk.BuildConfig
 import com.timecapsule.shared.AuthResponse
+import com.timecapsule.shared.BlockUserRequest
 import com.timecapsule.shared.CapsuleDto
 import com.timecapsule.shared.CheckHandleResponse
 import com.timecapsule.shared.CheckInRequest
@@ -51,6 +52,9 @@ interface CapsuleRepository {
     suspend fun openCapsule(capsuleId: String): CapsuleDto
     suspend fun archiveCapsule(capsuleId: String): CapsuleDto
     suspend fun unarchiveCapsule(capsuleId: String): CapsuleDto
+    suspend fun blockUser(userId: String): MessageResponse
+    suspend fun unblockUser(userId: String): MessageResponse
+    suspend fun getBlockedUsers(): List<UserDto>
     suspend fun deleteMyData(): MessageResponse
     suspend fun checkHealth(baseUrl: String = ApiConfig.BASE_URL): Boolean
 }
@@ -238,6 +242,32 @@ class RemoteCapsuleRepository : CapsuleRepository {
             client.post(endpoint("/api/v1/capsules/$capsuleId/unarchive")) {
                 attachBearerToken()
                 contentType(ContentType.Application.Json)
+            }.body()
+        }
+    }
+
+    override suspend fun blockUser(userId: String): MessageResponse {
+        return executeWithAuthCheck {
+            client.post(endpoint("/api/v1/blocks")) {
+                attachBearerToken()
+                contentType(ContentType.Application.Json)
+                setBody(BlockUserRequest(userId = userId))
+            }.body()
+        }
+    }
+
+    override suspend fun unblockUser(userId: String): MessageResponse {
+        return executeWithAuthCheck {
+            client.delete(endpoint("/api/v1/blocks/$userId")) {
+                attachBearerToken()
+            }.body()
+        }
+    }
+
+    override suspend fun getBlockedUsers(): List<UserDto> {
+        return executeWithAuthCheck {
+            client.get(endpoint("/api/v1/blocks")) {
+                attachBearerToken()
             }.body()
         }
     }

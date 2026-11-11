@@ -8,6 +8,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -101,7 +103,7 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CreateCapsuleScreen(
     formState: CreateCapsuleFormState,
@@ -111,6 +113,9 @@ fun CreateCapsuleScreen(
     onTitleChange: (String) -> Unit,
     onKindChange: (String) -> Unit = {},
     onRecipientChange: (String) -> Unit = {},
+    onRecipientSearchQueryChange: (String) -> Unit = {},
+    onAddRecipient: (UserDto) -> Unit = {},
+    onRemoveRecipient: (String) -> Unit = {},
     onTagsChange: (String) -> Unit = {},
     onMessageChange: (String) -> Unit = {},
     onDateChipClick: (String) -> Unit = {},
@@ -446,22 +451,180 @@ fun CreateCapsuleScreen(
                     )
                 )
 
-                // Recipient
-                OutlinedTextField(
-                    value = formState.recipient,
-                    onValueChange = onRecipientChange,
-                    label = { Text(stringResource(R.string.field_recipient_label)) },
-                    placeholder = { Text(stringResource(R.string.field_recipient_placeholder)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TokyoOnBackground,
-                        unfocusedTextColor = TokyoOnBackground,
-                        focusedBorderColor = TokyoSecondary,
-                        unfocusedBorderColor = TokyoSecondary.copy(alpha = 0.25f)
+                // Recipient picker (@handle chips, empty = self)
+                if (!formState.isGeoLocked) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = formState.recipientSearchQuery,
+                            onValueChange = onRecipientSearchQueryChange,
+                            label = { Text(stringResource(R.string.field_recipients_handle_label)) },
+                            placeholder = { Text(stringResource(R.string.field_recipients_handle_placeholder)) },
+                            leadingIcon = {
+                                Text(
+                                    text = "@",
+                                    color = TokyoSecondary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            },
+                            trailingIcon = {
+                                if (formState.isSearchingRecipients) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        color = TokyoSecondary,
+                                        strokeWidth = 2.dp
+                                    )
+                                }
+                            },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = TokyoOnBackground,
+                                unfocusedTextColor = TokyoOnBackground,
+                                focusedBorderColor = TokyoSecondary,
+                                unfocusedBorderColor = TokyoSecondary.copy(alpha = 0.25f)
+                            )
+                        )
+
+                        if (formState.selectedRecipients.isEmpty()) {
+                            Text(
+                                text = stringResource(R.string.recipients_self_hint),
+                                style = MaterialTheme.typography.bodySmall.copy(color = TokyoOnSurface)
+                            )
+                        } else {
+                            Text(
+                                text = stringResource(
+                                    R.string.recipients_selected_count,
+                                    formState.selectedRecipients.size
+                                ),
+                                style = MaterialTheme.typography.labelSmall.copy(color = TokyoSecondary)
+                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                formState.selectedRecipients.forEach { recipientUser ->
+                                    val chipLabel = recipientUser.handle?.let { "@$it" } ?: recipientUser.username
+                                    InputChip(
+                                        selected = true,
+                                        onClick = { onRemoveRecipient(recipientUser.id) },
+                                        label = {
+                                            Text(
+                                                text = chipLabel,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        },
+                                        trailingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        },
+                                        colors = InputChipDefaults.inputChipColors(
+                                            selectedContainerColor = TokyoSecondary.copy(alpha = 0.2f),
+                                            selectedLabelColor = TokyoOnBackground,
+                                            selectedTrailingIconColor = TokyoSecondary
+                                        ),
+                                        border = InputChipDefaults.inputChipBorder(
+                                            enabled = true,
+                                            selected = true,
+                                            selectedBorderColor = TokyoSecondary.copy(alpha = 0.55f)
+                                        ),
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        if (formState.recipientSearchResults.isNotEmpty()) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(TokyoBackground.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                                    .border(1.dp, TokyoSecondary.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                                    .padding(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                formState.recipientSearchResults.take(6).forEach { candidate ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .clickable { onAddRecipient(candidate) }
+                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        val avatar = candidate.avatarUrl ?: candidate.photoUrl
+                                        if (!avatar.isNullOrBlank()) {
+                                            AsyncImage(
+                                                model = avatar,
+                                                contentDescription = candidate.username,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier
+                                                    .size(28.dp)
+                                                    .clip(CircleShape)
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(28.dp)
+                                                    .clip(CircleShape)
+                                                    .background(TokyoSecondary.copy(alpha = 0.2f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Person,
+                                                    contentDescription = null,
+                                                    tint = TokyoSecondary,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = candidate.handle?.let { "@$it" } ?: candidate.username,
+                                                style = MaterialTheme.typography.bodyMedium.copy(
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = TokyoOnBackground
+                                                )
+                                            )
+                                            if (!candidate.handle.isNullOrBlank()) {
+                                                Text(
+                                                    text = candidate.username,
+                                                    style = MaterialTheme.typography.bodySmall.copy(color = TokyoOnSurface)
+                                                )
+                                            }
+                                        }
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = null,
+                                            tint = TokyoAccent,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = formState.recipient,
+                        onValueChange = onRecipientChange,
+                        label = { Text(stringResource(R.string.field_recipient_label)) },
+                        placeholder = { Text(stringResource(R.string.field_recipient_placeholder)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TokyoOnBackground,
+                            unfocusedTextColor = TokyoOnBackground,
+                            focusedBorderColor = TokyoSecondary,
+                            unfocusedBorderColor = TokyoSecondary.copy(alpha = 0.25f)
+                        )
                     )
-                )
+                }
 
                 // Tags
                 OutlinedTextField(
@@ -713,8 +876,9 @@ fun CreateCapsuleScreen(
                                 colors = CheckboxDefaults.colors(checkedColor = TokyoPrimary)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
+                            val displayLabel = user.handle?.let { "${user.username} (@$it)" } ?: user.username
                             Text(
-                                text = "${user.username} ${if (isCreator) stringResource(R.string.creator_mandatory_note) else ""}",
+                                text = "$displayLabel ${if (isCreator) stringResource(R.string.creator_mandatory_note) else ""}",
                                 style = MaterialTheme.typography.bodyMedium.copy(color = TokyoOnBackground)
                             )
                         }

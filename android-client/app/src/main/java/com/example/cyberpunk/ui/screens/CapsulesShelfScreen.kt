@@ -24,8 +24,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
@@ -34,6 +36,8 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Unarchive
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -52,6 +56,7 @@ import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -98,30 +103,39 @@ fun CapsulesShelfScreen(
     onUnarchiveCapsule: (String) -> Unit,
     onOpenRadar: (String) -> Unit,
     onOpenTimeline: (String) -> Unit,
-    onNavigateToCreate: () -> Unit
+    onNavigateToCreate: () -> Unit,
+    onBlockSender: (String) -> Unit = {}
 ) {
     val myCapsules = uiState.myCapsules
+    val currentUserId = uiState.currentUserId
     val searchQuery = uiState.searchQuery.trim()
 
-    // 1. Client-side Search filter: title, kind, recipient, #tag
+    // 1. Client-side Search filter: title, kind, recipient, creatorHandle, participant handle, #tag
     val searchedList = if (searchQuery.isEmpty()) {
         myCapsules
     } else {
         val cleanTagQuery = searchQuery.removePrefix("#")
+        val cleanHandleQuery = searchQuery.removePrefix("@")
         myCapsules.filter { c ->
             c.title.contains(searchQuery, ignoreCase = true) ||
                 c.kind.contains(searchQuery, ignoreCase = true) ||
                 (c.recipient?.contains(searchQuery, ignoreCase = true) == true) ||
+                (c.creatorHandle?.contains(cleanHandleQuery, ignoreCase = true) == true) ||
+                c.participants.any { it.handle?.contains(cleanHandleQuery, ignoreCase = true) == true } ||
                 c.tags.any { it.contains(cleanTagQuery, ignoreCase = true) }
         }
     }
 
-    // 2. Tab filter: 0 = SEALED, 1 = READY, 2 = OPENED, 3 = ARCHIVED
+    // 2. Tab filter: 0 = SEALED (own/geo), 1 = INBOX, 2 = READY, 3 = OPENED, 4 = ARCHIVED
+    val isInboxCapsule: (CapsuleDto) -> Boolean = { c ->
+        c.isInbox || (currentUserId != null && c.creatorId != currentUserId && !c.isGeoLocked)
+    }
     val displayedList = when (uiState.selectedTab) {
-        0 -> searchedList.filter { (it.status == "SEALED" || (!it.isFullyUnlocked && it.status != "OPENED")) && !it.archived && it.status != "ARCHIVED" }
-        1 -> searchedList.filter { (it.status == "READY" || (it.isFullyUnlocked && it.status != "OPENED")) && !it.archived && it.status != "ARCHIVED" }
-        2 -> searchedList.filter { it.status == "OPENED" && !it.archived }
-        3 -> searchedList.filter { it.status == "ARCHIVED" || it.archived }
+        0 -> searchedList.filter { !isInboxCapsule(it) && (it.status == "SEALED" || (!it.isFullyUnlocked && it.status != "OPENED")) && !it.archived && it.status != "ARCHIVED" }
+        1 -> searchedList.filter { isInboxCapsule(it) && !it.archived && it.status != "ARCHIVED" }
+        2 -> searchedList.filter { (it.status == "READY" || (it.isFullyUnlocked && it.status != "OPENED")) && !it.archived && it.status != "ARCHIVED" }
+        3 -> searchedList.filter { it.status == "OPENED" && !it.archived }
+        4 -> searchedList.filter { it.status == "ARCHIVED" || it.archived }
         else -> searchedList
     }
 
@@ -184,13 +198,14 @@ fun CapsulesShelfScreen(
             // Status Tabs
             val tabTitles = listOf(
                 stringResource(R.string.tab_sealed),
+                stringResource(R.string.tab_inbox),
                 stringResource(R.string.tab_ready),
                 stringResource(R.string.tab_opened),
                 stringResource(R.string.tab_archive)
             )
 
             ScrollableTabRow(
-                selectedTabIndex = uiState.selectedTab,
+                selectedTabIndex = uiState.selectedTab.coerceIn(0, tabTitles.lastIndex),
                 containerColor = TokyoBackground,
                 contentColor = TokyoPrimary,
                 edgePadding = 16.dp,
@@ -201,11 +216,28 @@ fun CapsulesShelfScreen(
                         selected = uiState.selectedTab == index,
                         onClick = { onTabSelected(index) },
                         text = {
-                            Text(
-                                text = title,
-                                fontWeight = if (uiState.selectedTab == index) FontWeight.Bold else FontWeight.Normal,
-                                color = if (uiState.selectedTab == index) TokyoPrimary else TokyoOnSurface
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = title,
+                                    fontWeight = if (uiState.selectedTab == index) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (uiState.selectedTab == index) TokyoPrimary else TokyoOnSurface
+                                )
+                                if (index == 1 && uiState.unreadInboxCount > 0) {
+                                    Badge(
+                                        containerColor = TokyoAccent,
+                                        contentColor = TokyoBackground
+                                    ) {
+                                        Text(
+                                            text = "${uiState.unreadInboxCount}",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+                            }
                         }
                     )
                 }
@@ -224,6 +256,7 @@ fun CapsulesShelfScreen(
             } else if (displayedList.isEmpty()) {
                 EmptyTabState(
                     selectedTab = uiState.selectedTab,
+                    currentUserHandle = uiState.currentUserHandle,
                     onNavigateToCreate = onNavigateToCreate
                 )
             } else {
@@ -244,7 +277,13 @@ fun CapsulesShelfScreen(
                             onOpenTimeline = { onOpenTimeline(capsule.id) },
                             onOpenRadar = { onOpenRadar(capsule.id) },
                             onArchive = { onArchiveCapsule(capsule.id) },
-                            onUnarchive = { onUnarchiveCapsule(capsule.id) }
+                            onUnarchive = { onUnarchiveCapsule(capsule.id) },
+                            onBlockSender = {
+                                val senderId = capsule.creatorId
+                                if (!senderId.isNullOrBlank()) {
+                                    onBlockSender(senderId)
+                                }
+                            }
                         )
                     }
                 }
@@ -263,10 +302,12 @@ private fun ShelfCapsuleCard(
     onOpenTimeline: () -> Unit,
     onOpenRadar: () -> Unit,
     onArchive: () -> Unit,
-    onUnarchive: () -> Unit
+    onUnarchive: () -> Unit,
+    onBlockSender: () -> Unit
 ) {
     val clipboardManager = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
+    var showBlockConfirmDialog by remember { mutableStateOf(false) }
 
     val statusColor = when (capsule.status) {
         "READY" -> TokyoAccent
@@ -285,6 +326,50 @@ private fun ShelfCapsuleCard(
     val isReady = capsule.status == "READY"
     val isOpened = capsule.status == "OPENED"
     val isArchived = capsule.status == "ARCHIVED" || capsule.archived
+    val isInbox = capsule.isInbox || (currentUserId != null && capsule.creatorId != currentUserId && !capsule.isGeoLocked)
+    val canBlockSender = capsule.creatorId != null &&
+        capsule.creatorId != currentUserId &&
+        (isInbox || !capsule.isGeoLocked)
+
+    if (showBlockConfirmDialog) {
+        val senderDisplay = capsule.creatorHandle?.let { "@$it" } ?: stringResource(R.string.sender_unknown_format)
+        AlertDialog(
+            onDismissRequest = { showBlockConfirmDialog = false },
+            containerColor = TokyoSurface,
+            title = {
+                Text(
+                    text = stringResource(R.string.dialog_block_sender_title),
+                    color = TokyoError,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.dialog_block_sender_msg, senderDisplay),
+                    color = TokyoOnBackground
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showBlockConfirmDialog = false
+                        onBlockSender()
+                    }
+                ) {
+                    Text(
+                        text = stringResource(R.string.btn_block_sender_confirm),
+                        color = TokyoError,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBlockConfirmDialog = false }) {
+                    Text(stringResource(R.string.btn_cancel), color = TokyoOnSurface)
+                }
+            }
+        )
+    }
 
     Card(
         modifier = Modifier
@@ -384,6 +469,16 @@ private fun ShelfCapsuleCard(
                                 }
                             )
                         }
+                        if (canBlockSender) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.menu_block_sender), color = TokyoError) },
+                                leadingIcon = { Icon(Icons.Default.Block, null, tint = TokyoError) },
+                                onClick = {
+                                    showMenu = false
+                                    showBlockConfirmDialog = true
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -399,15 +494,77 @@ private fun ShelfCapsuleCard(
                 overflow = TextOverflow.Ellipsis
             )
 
-            // Recipient if present
-            if (!capsule.recipient.isNullOrBlank()) {
+            // Sender (@handle) for Inbox capsules, OR recipient & delivery status for sent capsules
+            if (isInbox) {
+                val senderText = capsule.creatorHandle?.let {
+                    stringResource(R.string.sender_handle_format, it)
+                } ?: stringResource(R.string.sender_unknown_format)
                 Text(
-                    text = stringResource(R.string.recipient_format, capsule.recipient),
+                    text = senderText,
                     style = MaterialTheme.typography.bodySmall.copy(
-                        color = TokyoSecondary,
-                        fontWeight = FontWeight.Medium
+                        color = TokyoPrimary,
+                        fontWeight = FontWeight.SemiBold
                     )
                 )
+            } else {
+                val recipientParticipants = capsule.participants.filter {
+                    it.role == "RECIPIENT" || (it.userId != capsule.creatorId && !capsule.isGeoLocked)
+                }
+                if (recipientParticipants.isNotEmpty() && capsule.creatorId == currentUserId) {
+                    val handlesText = recipientParticipants.joinToString(", ") { p ->
+                        p.handle?.let { "@$it" } ?: p.username
+                    }
+                    Text(
+                        text = stringResource(R.string.recipients_list_format, handlesText),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = TokyoSecondary,
+                            fontWeight = FontWeight.Medium
+                        )
+                    )
+                    val openedRecipients = recipientParticipants.filter { it.openedAt != null }
+                    val deliveryLabel = if (openedRecipients.isNotEmpty()) {
+                        if (recipientParticipants.size == 1) {
+                            stringResource(
+                                R.string.status_opened_by_recipient,
+                                formatDateTime(openedRecipients.first().openedAt!!)
+                            )
+                        } else {
+                            stringResource(
+                                R.string.status_opened_by_many,
+                                openedRecipients.size,
+                                recipientParticipants.size
+                            )
+                        }
+                    } else {
+                        stringResource(R.string.status_delivered)
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (openedRecipients.isNotEmpty()) Icons.Default.DoneAll else Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = if (openedRecipients.isNotEmpty()) TokyoSuccess else TokyoAccent,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = deliveryLabel,
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                color = if (openedRecipients.isNotEmpty()) TokyoSuccess else TokyoAccent,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        )
+                    }
+                } else if (!capsule.recipient.isNullOrBlank()) {
+                    Text(
+                        text = stringResource(R.string.recipient_format, capsule.recipient),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = TokyoSecondary,
+                            fontWeight = FontWeight.Medium
+                        )
+                    )
+                }
             }
 
             // Tags
@@ -451,6 +608,15 @@ private fun ShelfCapsuleCard(
                     Text(
                         text = stringResource(R.string.stage_unlock_date_format, dateStr),
                         style = MaterialTheme.typography.bodySmall.copy(color = TokyoOnSurface)
+                    )
+                }
+                if (capsule.status == "SEALED" && !firstStage.isUnlocked) {
+                    Text(
+                        text = stringResource(R.string.sealed_until_format, dateStr),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = TokyoOnSurface.copy(alpha = 0.72f),
+                            fontSize = 11.sp
+                        )
                     )
                 }
             }
@@ -514,14 +680,21 @@ private fun ShelfCapsuleCard(
 @Composable
 private fun EmptyTabState(
     selectedTab: Int,
+    currentUserHandle: String?,
     onNavigateToCreate: () -> Unit
 ) {
     val (titleRes, descRes) = when (selectedTab) {
         0 -> R.string.empty_sealed_title to R.string.empty_sealed_desc
-        1 -> R.string.empty_ready_title to R.string.empty_ready_desc
-        2 -> R.string.empty_opened_title to R.string.empty_opened_desc
-        3 -> R.string.empty_archive_title to R.string.empty_archive_desc
+        1 -> R.string.empty_inbox_title to R.string.empty_inbox_desc
+        2 -> R.string.empty_ready_title to R.string.empty_ready_desc
+        3 -> R.string.empty_opened_title to R.string.empty_opened_desc
+        4 -> R.string.empty_archive_title to R.string.empty_archive_desc
         else -> R.string.my_capsules_empty_title to R.string.my_capsules_empty_desc
+    }
+    val descText = if (selectedTab == 1) {
+        stringResource(descRes, currentUserHandle ?: "handle")
+    } else {
+        stringResource(descRes)
     }
 
     Column(
@@ -559,7 +732,7 @@ private fun EmptyTabState(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = stringResource(descRes),
+            text = descText,
             style = MaterialTheme.typography.bodyMedium.copy(
                 color = TokyoOnSurface,
                 textAlign = TextAlign.Center

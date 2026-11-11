@@ -45,7 +45,10 @@ data class ParticipantStatusDto(
     val lastSeenAt: Long?,
     val isNearbyAndRecent: Boolean,
     val openedAt: Long? = null,
-    val archived: Boolean = false
+    val archived: Boolean = false,
+    val handle: String? = null,
+    val avatarUrl: String? = null,
+    val role: String = "MEMBER"
 )
 
 @Serializable
@@ -76,7 +79,9 @@ data class CapsuleDto(
     val isGeoLocked: Boolean = true,
     val status: String = "SEALED",
     val openedAt: Long? = null,
-    val archived: Boolean = false
+    val archived: Boolean = false,
+    val creatorHandle: String? = null,
+    val isInbox: Boolean = false
 )
 
 @Serializable
@@ -99,7 +104,13 @@ data class CreateCapsuleRequest(
     val kind: String = "MESSAGE",
     val recipient: String? = null,
     val tags: List<String> = emptyList(),
-    val isGeoLocked: Boolean = true
+    val isGeoLocked: Boolean = true,
+    val recipientHandles: List<String> = emptyList()
+)
+
+@Serializable
+data class BlockUserRequest(
+    val userId: String
 )
 
 @Serializable

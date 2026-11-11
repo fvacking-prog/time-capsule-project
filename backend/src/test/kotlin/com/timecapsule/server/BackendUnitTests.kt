@@ -1,9 +1,14 @@
 package com.timecapsule.server
 
 import com.timecapsule.shared.AuthResponse
+import com.timecapsule.shared.BlockUserRequest
+import com.timecapsule.shared.CapsuleDto
 import com.timecapsule.shared.CheckHandleResponse
+import com.timecapsule.shared.CreateCapsuleRequest
+import com.timecapsule.shared.CreateStageRequest
 import com.timecapsule.shared.ParticipantStatusDto
 import com.timecapsule.shared.UserDto
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -16,6 +21,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
@@ -231,7 +237,7 @@ class BackendUnitTests {
         )
 
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
 
             Users.insert {
                 it[id] = "user_a"
@@ -284,7 +290,7 @@ class BackendUnitTests {
         )
 
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
 
             Users.insert { it[id] = "user_a"; it[username] = "UserA" }
             Users.insert { it[id] = "user_b"; it[username] = "UserB" }
@@ -410,7 +416,7 @@ class BackendUnitTests {
         )
 
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
 
             Users.insert {
                 it[id] = "user_alice"
@@ -509,7 +515,7 @@ class BackendUnitTests {
         )
 
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
 
             Users.insert {
                 it[id] = "user_x"
@@ -576,7 +582,7 @@ class BackendUnitTests {
         )
 
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
 
             Users.insert {
                 it[id] = "user_target"
@@ -737,7 +743,7 @@ class BackendUnitTests {
         )
 
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
 
             Users.insert {
                 it[id] = "user_u1"
@@ -861,7 +867,7 @@ class BackendUnitTests {
         )
         val capId = "cap_load_test"
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
             Users.insert {
                 it[id] = "user_creator"
                 it[username] = "Creator"
@@ -943,7 +949,7 @@ class BackendUnitTests {
         var tokenA = ""
         var tokenB = ""
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
             Users.insert {
                 it[id] = "user_h1"
                 it[username] = "Alice"
@@ -1070,7 +1076,7 @@ class BackendUnitTests {
         )
         var selfToken = ""
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
             Users.insert {
                 it[id] = "self_user"
                 it[username] = "Alice Self"
@@ -1143,7 +1149,7 @@ class BackendUnitTests {
             driver = "org.h2.Driver"
         )
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
             Users.insert {
                 it[id] = "existing_uid"
                 it[username] = "Old Name"
@@ -1195,6 +1201,315 @@ class BackendUnitTests {
         } finally {
             googleTokenVerifierFn = prevVerifier
         }
+    }
+
+    @Test
+    fun `capsule sent by handle is visible only to sender and recipient, keeps sealed text hidden, and tracks recipient openedAt`() = testApplication {
+        val testDb = Database.connect(
+            url = "jdbc:h2:mem:test_send_handle_${UUID.randomUUID()};DB_CLOSE_DELAY=-1",
+            driver = "org.h2.Driver"
+        )
+        var aliceToken = ""
+        var bobToken = ""
+        var charlieToken = ""
+        transaction(testDb) {
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
+            Users.insert {
+                it[id] = "user_alice"
+                it[username] = "Alice"
+                it[handle] = "alice"
+                it[email] = "alice@example.com"
+            }
+            Users.insert {
+                it[id] = "user_bob"
+                it[username] = "Bob"
+                it[handle] = "bob_dev"
+                it[email] = "bob@example.com"
+            }
+            Users.insert {
+                it[id] = "user_charlie"
+                it[username] = "Charlie"
+                it[handle] = "charlie"
+                it[email] = "charlie@example.com"
+            }
+            for (i in 1..11) {
+                Users.insert {
+                    it[id] = "extra_$i"
+                    it[username] = "Extra $i"
+                    it[handle] = "extra_$i"
+                }
+            }
+            aliceToken = createSessionToken("user_alice")
+            bobToken = createSessionToken("user_bob")
+            charlieToken = createSessionToken("user_charlie")
+
+            // Verify legacy/default participant role defaults to MEMBER
+            Capsules.insert {
+                it[id] = "legacy_cap"
+                it[creatorId] = "user_alice"
+                it[title] = "Legacy"
+                it[latitude] = 0.0
+                it[longitude] = 0.0
+                it[radiusMeters] = 50.0
+                it[createdAt] = System.currentTimeMillis()
+                it[isGroupCapsule] = false
+                it[inviteCode] = "LEG001"
+                it[isGeoLocked] = false
+            }
+            CapsuleParticipants.insert {
+                it[capsuleId] = "legacy_cap"
+                it[userId] = "user_bob"
+            }
+            val legacyRole = CapsuleParticipants
+                .selectAll()
+                .where { (CapsuleParticipants.capsuleId eq "legacy_cap") and (CapsuleParticipants.userId eq "user_bob") }
+                .single()[CapsuleParticipants.role]
+            assertEquals("MEMBER", legacyRole)
+        }
+
+        application {
+            installSerializationAndErrors()
+            routing { capsuleRoutes() }
+        }
+
+        val json = Json { ignoreUnknownKeys = true }
+        val secretPhrase = "ULTRA_SECRET_MESSAGE_2027"
+        val futureUnlock = System.currentTimeMillis() + 3_600_000L
+
+        // >10 recipients on personal capsule rejected with 400
+        val tooManyReq = CreateCapsuleRequest(
+            title = "Too many recipients",
+            isGeoLocked = false,
+            recipientHandles = (1..11).map { "extra_$it" },
+            stages = listOf(CreateStageRequest(stageNumber = 1, unlockDate = futureUnlock, secretText = secretPhrase))
+        )
+        val tooManyResp = client.post("/api/v1/capsules") {
+            header(HttpHeaders.Authorization, "Bearer $aliceToken")
+            contentType(ContentType.Application.Json)
+            setBody(json.encodeToString(tooManyReq))
+        }
+        assertEquals(HttpStatusCode.BadRequest, tooManyResp.status)
+
+        // Alice sends personal capsule to @bob_dev
+        val sendReq = CreateCapsuleRequest(
+            title = "Letter to Bob",
+            isGeoLocked = false,
+            recipientHandles = listOf("@bob_dev"),
+            stages = listOf(CreateStageRequest(stageNumber = 1, unlockDate = futureUnlock, secretText = secretPhrase))
+        )
+        val createResp = client.post("/api/v1/capsules") {
+            header(HttpHeaders.Authorization, "Bearer $aliceToken")
+            contentType(ContentType.Application.Json)
+            setBody(json.encodeToString(sendReq))
+        }
+        assertEquals(HttpStatusCode.OK, createResp.status)
+        val createRaw = createResp.bodyAsText()
+        assertFalse(createRaw.contains(secretPhrase), "Sealed secret text must NOT leak to creator on creation")
+        val createdDto = json.decodeFromString<CapsuleDto>(createRaw)
+        assertEquals("SEALED", createdDto.status)
+        assertFalse(createdDto.isInbox)
+        assertEquals("CREATOR", createdDto.participants.first { it.userId == "user_alice" }.role)
+        assertEquals("RECIPIENT", createdDto.participants.first { it.userId == "user_bob" }.role)
+
+        // Bob sees it in Inbox as SEALED with @alice sender handle, secret text hidden
+        val bobListResp = client.get("/api/v1/capsules") {
+            header(HttpHeaders.Authorization, "Bearer $bobToken")
+        }
+        assertEquals(HttpStatusCode.OK, bobListResp.status)
+        val bobListRaw = bobListResp.bodyAsText()
+        assertFalse(bobListRaw.contains(secretPhrase), "Sealed secret text must NOT leak to recipient before date")
+        val bobCapsule = json.decodeFromString<List<CapsuleDto>>(bobListRaw).first { it.id == createdDto.id }
+        assertTrue(bobCapsule.isInbox)
+        assertEquals("alice", bobCapsule.creatorHandle)
+        assertEquals("SEALED", bobCapsule.status)
+        assertEquals(GeoUtils.LOCKED_PLACEHOLDER, bobCapsule.stages.first().text)
+
+        // Premature open by Bob gives 409 Conflict
+        val prematureOpen = client.post("/api/v1/capsules/${createdDto.id}/open") {
+            header(HttpHeaders.Authorization, "Bearer $bobToken")
+        }
+        assertEquals(HttpStatusCode.Conflict, prematureOpen.status)
+
+        // Charlie (stranger) does NOT see it in list, GET /{id}, or POST /open
+        val charlieList = json.decodeFromString<List<CapsuleDto>>(
+            client.get("/api/v1/capsules") {
+                header(HttpHeaders.Authorization, "Bearer $charlieToken")
+            }.bodyAsText()
+        )
+        assertTrue(charlieList.none { it.id == createdDto.id })
+        assertEquals(
+            HttpStatusCode.NotFound,
+            client.get("/api/v1/capsules/${createdDto.id}") {
+                header(HttpHeaders.Authorization, "Bearer $charlieToken")
+            }.status
+        )
+        assertEquals(
+            HttpStatusCode.NotFound,
+            client.post("/api/v1/capsules/${createdDto.id}/open") {
+                header(HttpHeaders.Authorization, "Bearer $charlieToken")
+            }.status
+        )
+
+        // Simulate time passing beyond unlockDate
+        transaction(testDb) {
+            CapsuleStages.update({ CapsuleStages.capsuleId eq createdDto.id }) {
+                it[unlockDate] = System.currentTimeMillis() - 10_000L
+            }
+        }
+
+        // Bob opens capsule himself
+        val bobOpenResp = client.post("/api/v1/capsules/${createdDto.id}/open") {
+            header(HttpHeaders.Authorization, "Bearer $bobToken")
+        }
+        assertEquals(HttpStatusCode.OK, bobOpenResp.status)
+        val bobOpenedDto = json.decodeFromString<CapsuleDto>(bobOpenResp.bodyAsText())
+        assertEquals("OPENED", bobOpenedDto.status)
+        assertNotNull(bobOpenedDto.openedAt)
+        assertEquals(secretPhrase, bobOpenedDto.stages.first().text)
+
+        // Alice sees recipient openedAt populated ("открыто получателем")
+        val aliceViewResp = client.get("/api/v1/capsules/${createdDto.id}") {
+            header(HttpHeaders.Authorization, "Bearer $aliceToken")
+        }
+        val aliceView = json.decodeFromString<CapsuleDto>(aliceViewResp.bodyAsText())
+        val bobParticipantStatus = aliceView.participants.first { it.userId == "user_bob" }
+        assertEquals("RECIPIENT", bobParticipantStatus.role)
+        assertNotNull(bobParticipantStatus.openedAt)
+        assertNull(aliceView.openedAt)
+    }
+
+    @Test
+    fun `daily limit returns 429 on 31st sent capsule and blocking prevents sending and hides existing inbox`() = testApplication {
+        val testDb = Database.connect(
+            url = "jdbc:h2:mem:test_limit_block_${UUID.randomUUID()};DB_CLOSE_DELAY=-1",
+            driver = "org.h2.Driver"
+        )
+        var spammerToken = ""
+        var aliceToken = ""
+        var bobToken = ""
+        transaction(testDb) {
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
+            Users.insert {
+                it[id] = "spammer"
+                it[username] = "Spammer"
+                it[handle] = "spammer_user"
+            }
+            Users.insert {
+                it[id] = "alice"
+                it[username] = "Alice"
+                it[handle] = "alice_send"
+            }
+            Users.insert {
+                it[id] = "bob"
+                it[username] = "Bob"
+                it[handle] = "bob_recv"
+            }
+            spammerToken = createSessionToken("spammer")
+            aliceToken = createSessionToken("alice")
+            bobToken = createSessionToken("bob")
+        }
+
+        application {
+            installSerializationAndErrors()
+            routing { capsuleRoutes() }
+        }
+
+        val json = Json { ignoreUnknownKeys = true }
+        val futureUnlock = System.currentTimeMillis() + 3_600_000L
+
+        // Send 30 capsules within 24h -> all succeed
+        for (i in 1..30) {
+            val req = CreateCapsuleRequest(
+                title = "Msg $i",
+                isGeoLocked = false,
+                recipientHandles = listOf("bob_recv"),
+                stages = listOf(CreateStageRequest(1, futureUnlock, "Secret $i"))
+            )
+            val resp = client.post("/api/v1/capsules") {
+                header(HttpHeaders.Authorization, "Bearer $spammerToken")
+                contentType(ContentType.Application.Json)
+                setBody(json.encodeToString(req))
+            }
+            assertEquals(HttpStatusCode.OK, resp.status)
+        }
+
+        // 31st sent capsule in 24h -> 429 Too Many Requests
+        val overLimitReq = CreateCapsuleRequest(
+            title = "Msg 31",
+            isGeoLocked = false,
+            recipientHandles = listOf("bob_recv"),
+            stages = listOf(CreateStageRequest(1, futureUnlock, "Too much"))
+        )
+        val overLimitResp = client.post("/api/v1/capsules") {
+            header(HttpHeaders.Authorization, "Bearer $spammerToken")
+            contentType(ContentType.Application.Json)
+            setBody(json.encodeToString(overLimitReq))
+        }
+        assertEquals(HttpStatusCode.TooManyRequests, overLimitResp.status)
+
+        // Alice sends a capsule to Bob (visible before block)
+        val aliceResp = client.post("/api/v1/capsules") {
+            header(HttpHeaders.Authorization, "Bearer $aliceToken")
+            contentType(ContentType.Application.Json)
+            setBody(
+                json.encodeToString(
+                    CreateCapsuleRequest(
+                        title = "From Alice",
+                        isGeoLocked = false,
+                        recipientHandles = listOf("bob_recv"),
+                        stages = listOf(CreateStageRequest(1, futureUnlock, "Hi Bob"))
+                    )
+                )
+            )
+        }
+        assertEquals(HttpStatusCode.OK, aliceResp.status)
+        val aliceCapId = json.decodeFromString<CapsuleDto>(aliceResp.bodyAsText()).id
+
+        val bobBeforeBlock = json.decodeFromString<List<CapsuleDto>>(
+            client.get("/api/v1/capsules") {
+                header(HttpHeaders.Authorization, "Bearer $bobToken")
+            }.bodyAsText()
+        )
+        assertTrue(bobBeforeBlock.any { it.id == aliceCapId })
+
+        // Bob blocks Alice
+        val blockResp = client.post("/api/v1/blocks") {
+            header(HttpHeaders.Authorization, "Bearer $bobToken")
+            contentType(ContentType.Application.Json)
+            setBody(json.encodeToString(BlockUserRequest(userId = "alice")))
+        }
+        assertEquals(HttpStatusCode.OK, blockResp.status)
+
+        // Existing incoming capsule from Alice is hidden from Bob
+        val bobAfterBlock = json.decodeFromString<List<CapsuleDto>>(
+            client.get("/api/v1/capsules") {
+                header(HttpHeaders.Authorization, "Bearer $bobToken")
+            }.bodyAsText()
+        )
+        assertTrue(bobAfterBlock.none { it.id == aliceCapId })
+        assertEquals(
+            HttpStatusCode.NotFound,
+            client.get("/api/v1/capsules/$aliceCapId") {
+                header(HttpHeaders.Authorization, "Bearer $bobToken")
+            }.status
+        )
+
+        // Alice cannot send new capsule to Bob -> 403 Forbidden
+        val blockedSendResp = client.post("/api/v1/capsules") {
+            header(HttpHeaders.Authorization, "Bearer $aliceToken")
+            contentType(ContentType.Application.Json)
+            setBody(
+                json.encodeToString(
+                    CreateCapsuleRequest(
+                        title = "Blocked attempt",
+                        isGeoLocked = false,
+                        recipientHandles = listOf("bob_recv"),
+                        stages = listOf(CreateStageRequest(1, futureUnlock, "Should fail"))
+                    )
+                )
+            )
+        }
+        assertEquals(HttpStatusCode.Forbidden, blockedSendResp.status)
     }
 }
 

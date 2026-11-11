@@ -4,6 +4,7 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.timecapsule.shared.AuthResponse
+import com.timecapsule.shared.BlockUserRequest
 import com.timecapsule.shared.CapsuleDto
 import com.timecapsule.shared.CapsuleStageDto
 import com.timecapsule.shared.CheckHandleResponse
@@ -29,11 +30,15 @@ import io.ktor.server.routing.route
 import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.greaterEq
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.inList
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.isNull
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.neq
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.notInList
 import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
+import org.jetbrains.exposed.sql.or
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
@@ -56,12 +61,34 @@ fun generateUniqueInviteCode(): String {
     }
 }
 
-fun canUserAccessCapsule(capsuleId: String, userId: String): Boolean {
-    val isCreator = Capsules
+internal fun isUserBlockedBy(blockerId: String, blockedUserId: String): Boolean {
+    return Blocks
         .selectAll()
-        .where { (Capsules.id eq capsuleId) and (Capsules.creatorId eq userId) }
+        .where { (Blocks.blockerId eq blockerId) and (Blocks.blockedUserId eq blockedUserId) }
         .count() > 0L
-    if (isCreator) return true
+}
+
+internal fun getBlockedUserIdsFor(blockerId: String): Set<String> {
+    return Blocks
+        .selectAll()
+        .where { Blocks.blockerId eq blockerId }
+        .map { it[Blocks.blockedUserId] }
+        .toSet()
+}
+
+fun canUserAccessCapsule(capsuleId: String, userId: String): Boolean {
+    val capsuleRow = Capsules
+        .selectAll()
+        .where { Capsules.id eq capsuleId }
+        .singleOrNull()
+        ?: return false
+
+    val creatorId = capsuleRow[Capsules.creatorId]
+    if (creatorId == userId) return true
+
+    if (isUserBlockedBy(blockerId = userId, blockedUserId = creatorId)) {
+        return false
+    }
 
     val isParticipant = CapsuleParticipants
         .selectAll()
@@ -81,7 +108,19 @@ fun getVisibleCapsuleIds(userId: String): List<String> {
         .where { Capsules.creatorId eq userId }
         .map { it[Capsules.id] }
 
-    return (participantCapsuleIds + creatorCapsuleIds).distinct()
+    val candidateIds = (participantCapsuleIds + creatorCapsuleIds).distinct()
+    if (candidateIds.isEmpty()) return emptyList()
+
+    val blockedCreators = getBlockedUserIdsFor(userId)
+    if (blockedCreators.isEmpty()) return candidateIds
+
+    return Capsules
+        .selectAll()
+        .where {
+            (Capsules.id inList candidateIds) and
+                ((Capsules.creatorId eq userId) or (Capsules.creatorId notInList blockedCreators))
+        }
+        .map { it[Capsules.id] }
 }
 
 fun joinCapsuleByInviteCode(
@@ -104,6 +143,11 @@ fun joinCapsuleByInviteCode(
         }
         ?: throw CapsuleNotFoundException("Капсула с кодом приглашения '$cleanCode' не найдена")
 
+    val creatorId = capsuleRow[Capsules.creatorId]
+    if (creatorId != userId && isUserBlockedBy(blockerId = userId, blockedUserId = creatorId)) {
+        throw CapsuleNotFoundException("Капсула с кодом приглашения '$cleanCode' не найдена")
+    }
+
     val capsuleId = capsuleRow[Capsules.id]
     val alreadyParticipant = CapsuleParticipants
         .selectAll()
@@ -119,6 +163,7 @@ fun joinCapsuleByInviteCode(
             it[CapsuleParticipants.lastSeenAt] = null
             it[CapsuleParticipants.openedAt] = null
             it[CapsuleParticipants.archived] = false
+            it[CapsuleParticipants.role] = "MEMBER"
         }
         Capsules.update({ Capsules.id eq capsuleId }) {
             it[isGroupCapsule] = true
@@ -239,9 +284,67 @@ fun Route.capsuleRoutes() {
             }
 
             CapsuleParticipants.deleteWhere { userId eq authenticatedUserId }
+            Blocks.deleteWhere { (blockerId eq authenticatedUserId) or (blockedUserId eq authenticatedUserId) }
             Sessions.deleteWhere { userId eq authenticatedUserId }
         }
         call.respond(MessageResponse("Все данные пользователя успешно удалены"))
+    }
+
+    route("/api/v1/blocks") {
+        get {
+            val currentUserId = call.requireAuthenticatedUserId()
+            val blockedUsers = transaction {
+                (Blocks innerJoin Users)
+                    .selectAll()
+                    .where { Blocks.blockerId eq currentUserId }
+                    .orderBy(Blocks.createdAt to SortOrder.DESC)
+                    .map { it.toUserDto(includeEmail = false) }
+            }
+            call.respond(blockedUsers)
+        }
+
+        post {
+            val currentUserId = call.requireAuthenticatedUserId()
+            val request = call.receive<BlockUserRequest>()
+            val targetUserId = request.userId.trim()
+            require(targetUserId.isNotEmpty() && targetUserId.length <= MAX_ID_LENGTH) {
+                "Некорректный идентификатор пользователя"
+            }
+            require(targetUserId != currentUserId) {
+                "Нельзя заблокировать самого себя"
+            }
+
+            transaction {
+                val targetExists = Users.selectAll().where { Users.id eq targetUserId }.count() > 0L
+                if (!targetExists) {
+                    throw ParticipantNotFoundException("Пользователь '$targetUserId' не найден")
+                }
+                val alreadyBlocked = Blocks
+                    .selectAll()
+                    .where { (Blocks.blockerId eq currentUserId) and (Blocks.blockedUserId eq targetUserId) }
+                    .count() > 0L
+                if (!alreadyBlocked) {
+                    Blocks.insert {
+                        it[blockerId] = currentUserId
+                        it[blockedUserId] = targetUserId
+                        it[createdAt] = System.currentTimeMillis()
+                    }
+                }
+            }
+            call.respond(MessageResponse("Отправитель заблокирован"))
+        }
+
+        delete("/{userId}") {
+            val currentUserId = call.requireAuthenticatedUserId()
+            val targetUserId = call.parameters["userId"]?.trim().orEmpty()
+            require(targetUserId.isNotEmpty()) { "Не указан userId" }
+            transaction {
+                Blocks.deleteWhere {
+                    (Blocks.blockerId eq currentUserId) and (Blocks.blockedUserId eq targetUserId)
+                }
+            }
+            call.respond(MessageResponse("Пользователь разблокирован"))
+        }
     }
 
     route("/api/v1/users") {
@@ -297,12 +400,76 @@ fun Route.capsuleRoutes() {
             val capsule = transaction {
                 val now = System.currentTimeMillis()
                 val capsuleId = UUID.randomUUID().toString()
-                val allParticipantIds = (listOf(authenticatedUserId) + request.participantIds).distinct()
 
-                for (uid in allParticipantIds) {
-                    val userExists = Users.selectAll().where { Users.id eq uid }.count() > 0L
-                    if (!userExists) {
+                val resolvedHandleRecipients = request.recipientHandles
+                    .map { HandleUtils.normalizeHandle(it) }
+                    .filter { it.isNotEmpty() }
+                    .distinct()
+                    .map { normalizedHandle ->
+                        val userRow = Users
+                            .selectAll()
+                            .where { Users.handle eq normalizedHandle }
+                            .singleOrNull()
+                            ?: throw ParticipantNotFoundException("Пользователь @$normalizedHandle не найден")
+                        userRow[Users.id]
+                    }
+
+                val targetRecipientIds = (resolvedHandleRecipients + request.participantIds)
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() && it != authenticatedUserId }
+                    .distinct()
+
+                if (!request.isGeoLocked && targetRecipientIds.size > MAX_PERSONAL_RECIPIENTS) {
+                    throw IllegalArgumentException(
+                        "Личная капсула может иметь не более $MAX_PERSONAL_RECIPIENTS получателей"
+                    )
+                }
+
+                val creatorExists = Users.selectAll().where { Users.id eq authenticatedUserId }.count() > 0L
+                if (!creatorExists) {
+                    throw ParticipantNotFoundException("Registered user '$authenticatedUserId' not found")
+                }
+
+                val recipientUsersById = if (targetRecipientIds.isEmpty()) {
+                    emptyMap()
+                } else {
+                    Users.selectAll()
+                        .where { Users.id inList targetRecipientIds }
+                        .associateBy { it[Users.id] }
+                }
+
+                for (uid in targetRecipientIds) {
+                    if (!recipientUsersById.containsKey(uid)) {
                         throw ParticipantNotFoundException("Registered user '$uid' not found")
+                    }
+                }
+
+                if (targetRecipientIds.isNotEmpty()) {
+                    val hasBlockedSender = Blocks
+                        .selectAll()
+                        .where {
+                            (Blocks.blockerId inList targetRecipientIds) and
+                                (Blocks.blockedUserId eq authenticatedUserId)
+                        }
+                        .count() > 0L
+                    if (hasBlockedSender) {
+                        throw ForbiddenException("Невозможно отправить капсулу: получатель заблокировал вас")
+                    }
+
+                    val dayAgo = now - ONE_DAY_MILLIS
+                    val sentLast24h = (Capsules innerJoin CapsuleParticipants)
+                        .select(Capsules.id)
+                        .where {
+                            (Capsules.creatorId eq authenticatedUserId) and
+                                (Capsules.createdAt greaterEq dayAgo) and
+                                (CapsuleParticipants.userId neq authenticatedUserId)
+                        }
+                        .withDistinct()
+                        .count()
+                    if (sentLast24h >= MAX_DAILY_SENT_CAPSULES) {
+                        throw TooManyRequestsException(
+                            "Превышен суточный лимит отправки капсул (не более $MAX_DAILY_SENT_CAPSULES в сутки). Попробуйте позже."
+                        )
                     }
                 }
 
@@ -310,6 +477,16 @@ fun Route.capsuleRoutes() {
                 val isGeo = request.isGeoLocked
                 val finalKind = if (request.kind.isNotBlank()) request.kind.uppercase() else "MESSAGE"
                 val cleanTags = request.tags.map { it.trim().removePrefix("#") }.filter { it.isNotEmpty() }.take(5)
+                val derivedRecipientLabel = request.recipient?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: if (targetRecipientIds.isNotEmpty()) {
+                        targetRecipientIds.mapNotNull { uid ->
+                            val row = recipientUsersById[uid] ?: return@mapNotNull null
+                            val h = row[Users.handle]
+                            if (!h.isNullOrBlank()) "@$h" else row[Users.displayName]?.takeIf { it.isNotBlank() } ?: row[Users.username]
+                        }.joinToString(", ").take(255).ifBlank { null }
+                    } else {
+                        null
+                    }
 
                 Capsules.insert {
                     it[id] = capsuleId
@@ -319,15 +496,27 @@ fun Route.capsuleRoutes() {
                     it[longitude] = if (isGeo) request.longitude else 0.0
                     it[radiusMeters] = if (isGeo) request.radiusMeters else 50.0
                     it[createdAt] = now
-                    it[isGroupCapsule] = if (isGeo) (request.isGroupCapsule || allParticipantIds.size > 1) else false
+                    it[isGroupCapsule] = if (isGeo) (request.isGroupCapsule || targetRecipientIds.isNotEmpty()) else false
                     it[inviteCode] = generatedInviteCode
                     it[kind] = finalKind
-                    it[recipient] = request.recipient?.trim()?.takeIf { it.isNotEmpty() }
+                    it[recipient] = derivedRecipientLabel
                     it[tags] = cleanTags.joinToString(",")
                     it[isGeoLocked] = isGeo
                 }
 
-                for (participantId in allParticipantIds) {
+                CapsuleParticipants.insert {
+                    it[CapsuleParticipants.capsuleId] = capsuleId
+                    it[userId] = authenticatedUserId
+                    it[lastLat] = null
+                    it[lastLon] = null
+                    it[lastSeenAt] = null
+                    it[openedAt] = null
+                    it[archived] = false
+                    it[role] = "CREATOR"
+                }
+
+                val targetRole = if (isGeo) "MEMBER" else "RECIPIENT"
+                for (participantId in targetRecipientIds) {
                     CapsuleParticipants.insert {
                         it[CapsuleParticipants.capsuleId] = capsuleId
                         it[userId] = participantId
@@ -336,6 +525,7 @@ fun Route.capsuleRoutes() {
                         it[lastSeenAt] = null
                         it[openedAt] = null
                         it[archived] = false
+                        it[role] = targetRole
                     }
                 }
 
@@ -408,7 +598,9 @@ fun Route.capsuleRoutes() {
                 }
 
                 CapsuleParticipants.update({
-                    (CapsuleParticipants.capsuleId eq capsuleId) and (CapsuleParticipants.userId eq authenticatedUserId)
+                    (CapsuleParticipants.capsuleId eq capsuleId) and
+                        (CapsuleParticipants.userId eq authenticatedUserId) and
+                        CapsuleParticipants.openedAt.isNull()
                 }) {
                     it[openedAt] = now
                 }
@@ -689,6 +881,9 @@ private const val MAX_TITLE_LENGTH = 255
 private const val MAX_STAGE_TEXT_LENGTH = 5000
 private const val MAX_STAGES_COUNT = 50
 private const val MAX_PARTICIPANTS_COUNT = 100
+private const val MAX_PERSONAL_RECIPIENTS = 10
+private const val MAX_DAILY_SENT_CAPSULES = 30L
+private const val ONE_DAY_MILLIS = 24L * 60L * 60L * 1000L
 private const val MAX_RADIUS_METERS = 100_000.0
 
 internal fun validateCreateCapsuleRequest(request: CreateCapsuleRequest, authenticatedUserId: String) {
@@ -712,6 +907,18 @@ internal fun validateCreateCapsuleRequest(request: CreateCapsuleRequest, authent
             request.participantIds.all { it.isNotBlank() && it.length <= MAX_ID_LENGTH }
     ) {
         "Invalid participantIds"
+    }
+    require(
+        request.recipientHandles.size <= MAX_PERSONAL_RECIPIENTS &&
+            request.recipientHandles.all { HandleUtils.normalizeHandle(it).isNotEmpty() }
+    ) {
+        "Некорректный список получателей (максимум $MAX_PERSONAL_RECIPIENTS)"
+    }
+    if (!request.isGeoLocked) {
+        val nonSelfCount = request.participantIds.count { it.trim() != authenticatedUserId }
+        require(nonSelfCount <= MAX_PERSONAL_RECIPIENTS && request.recipientHandles.size <= MAX_PERSONAL_RECIPIENTS) {
+            "Личная капсула может иметь не более $MAX_PERSONAL_RECIPIENTS получателей"
+        }
     }
     require(request.stages.isNotEmpty() && request.stages.size <= MAX_STAGES_COUNT) {
         "Stages count must be between 1 and $MAX_STAGES_COUNT"
@@ -759,6 +966,13 @@ fun buildCapsuleDto(
         .singleOrNull()
         ?: throw CapsuleNotFoundException("Capsule '$capsuleId' not found")
 
+    val creatorId = capsuleRow[Capsules.creatorId]
+    val creatorRow = Users
+        .selectAll()
+        .where { Users.id eq creatorId }
+        .singleOrNull()
+    val creatorHandle = creatorRow?.get(Users.handle)
+
     val capsuleLat = capsuleRow[Capsules.latitude]
     val capsuleLon = capsuleRow[Capsules.longitude]
     val radiusMeters = capsuleRow[Capsules.radiusMeters]
@@ -803,7 +1017,10 @@ fun buildCapsuleDto(
                 lastSeenAt = lastSeenAt,
                 isNearbyAndRecent = isNearbyAndRecent,
                 openedAt = row[CapsuleParticipants.openedAt],
-                archived = row[CapsuleParticipants.archived]
+                archived = row[CapsuleParticipants.archived],
+                handle = row[Users.handle],
+                avatarUrl = row[Users.photoUrl],
+                role = row[CapsuleParticipants.role]
             )
         }
 
@@ -840,7 +1057,7 @@ fun buildCapsuleDto(
     val isFullyUnlocked = stages.isNotEmpty() && stages.any { it.isUnlocked } && allParticipantsNearbyAndRecent
 
     val isMember = requestingUserId != null && (
-        capsuleRow[Capsules.creatorId] == requestingUserId ||
+        creatorId == requestingUserId ||
         participants.any { it.userId == requestingUserId }
     )
     val inviteCode = if (requestingUserId == null || isMember) {
@@ -856,6 +1073,9 @@ fun buildCapsuleDto(
     }
     val myOpenedAt = myParticipant?.openedAt
     val myArchived = myParticipant?.archived ?: false
+    val isInbox = requestingUserId != null &&
+        creatorId != requestingUserId &&
+        (myParticipant?.role == "RECIPIENT" || (!isGeoLocked && myParticipant != null))
 
     val status = when {
         myArchived -> "ARCHIVED"
@@ -874,7 +1094,7 @@ fun buildCapsuleDto(
         isFullyUnlocked = isFullyUnlocked,
         stages = stages,
         participants = participants,
-        creatorId = capsuleRow[Capsules.creatorId],
+        creatorId = creatorId,
         inviteCode = inviteCode,
         kind = kind,
         recipient = recipient,
@@ -882,6 +1102,8 @@ fun buildCapsuleDto(
         isGeoLocked = isGeoLocked,
         status = status,
         openedAt = myOpenedAt,
-        archived = myArchived
+        archived = myArchived,
+        creatorHandle = creatorHandle,
+        isInbox = isInbox
     )
 }

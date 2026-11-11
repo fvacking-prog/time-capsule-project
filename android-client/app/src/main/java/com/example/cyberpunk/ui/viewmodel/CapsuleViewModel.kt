@@ -11,6 +11,7 @@ import com.example.cyberpunk.BuildConfig
 import com.example.cyberpunk.R
 import com.example.cyberpunk.data.ApiConfig
 import com.example.cyberpunk.data.CapsuleRepository
+import com.example.cyberpunk.data.CapsuleUnlockScheduler
 import com.example.cyberpunk.data.GeoHelper
 import com.example.cyberpunk.data.HandleLocalValidation
 import com.example.cyberpunk.data.HandleValidator
@@ -64,6 +65,10 @@ data class CreateCapsuleFormState(
     val radiusMeters: Float = 50f,
     val participantSearchQuery: String = "",
     val selectedParticipantIds: Set<String> = emptySet(),
+    val recipientSearchQuery: String = "",
+    val selectedRecipients: List<UserDto> = emptyList(),
+    val recipientSearchResults: List<UserDto> = emptyList(),
+    val isSearchingRecipients: Boolean = false,
     val stages: List<DraftStageItem> = listOf(
         DraftStageItem(
             unlockDateMillis = UnlockDateTimeHelper.defaultUnlockMillis(daysAhead = 7),
@@ -114,7 +119,7 @@ data class CapsuleUiState(
     val isRefreshingCapsules: Boolean = false,
     val createForm: CreateCapsuleFormState = CreateCapsuleFormState(),
     val searchQuery: String = "",
-    val selectedTab: Int = 0, // 0: SEALED, 1: READY, 2: OPENED, 3: ARCHIVED
+    val selectedTab: Int = 0, // 0: SEALED, 1: INBOX, 2: READY, 3: OPENED, 4: ARCHIVED
     val isPinSet: Boolean = false,
     val isPinUnlocked: Boolean = false,
     val showPinPromptDialog: Boolean = false,
@@ -153,6 +158,14 @@ data class CapsuleUiState(
 
     val currentPhotoUrl: String?
         get() = currentUser?.avatarUrl ?: currentUser?.photoUrl
+
+    val unreadInboxCount: Int
+        get() = myCapsules.count { c ->
+            (c.isInbox || (c.creatorId != currentUserId && !c.isGeoLocked)) &&
+                !c.archived &&
+                c.status != "ARCHIVED" &&
+                c.openedAt == null
+        }
 }
 
 class CapsuleViewModel(application: Application) : AndroidViewModel(application) {
@@ -175,6 +188,7 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private var userSearchJob: Job? = null
+    private var recipientSearchJob: Job? = null
     private var handleCheckJob: Job? = null
 
     init {
@@ -427,6 +441,8 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
 
     fun logout() {
         handleCheckJob?.cancel()
+        recipientSearchJob?.cancel()
+        CapsuleUnlockScheduler.cancelAll(appContext)
         val credentialManager = CredentialManager.create(appContext)
         viewModelScope.launch {
             try {
@@ -495,6 +511,95 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun updateRecipientSearchQuery(query: String) {
+        _uiState.update { state ->
+            state.copy(
+                createForm = state.createForm.copy(
+                    recipientSearchQuery = query,
+                    isSearchingRecipients = query.trim().removePrefix("@").isNotEmpty()
+                )
+            )
+        }
+        recipientSearchJob?.cancel()
+        val cleaned = query.trim()
+        if (cleaned.removePrefix("@").isEmpty()) {
+            _uiState.update { state ->
+                state.copy(
+                    createForm = state.createForm.copy(
+                        recipientSearchResults = emptyList(),
+                        isSearchingRecipients = false
+                    )
+                )
+            }
+            return
+        }
+        recipientSearchJob = viewModelScope.launch {
+            delay(250L)
+            try {
+                val results = remoteRepository.searchUsers(cleaned)
+                _uiState.update { state ->
+                    val alreadySelectedIds = state.createForm.selectedRecipients.map { it.id }.toSet()
+                    state.copy(
+                        availableUsers = mergeUsers(state.availableUsers, results),
+                        createForm = state.createForm.copy(
+                            recipientSearchResults = results.filter { it.id !in alreadySelectedIds },
+                            isSearchingRecipients = false
+                        )
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: SessionExpiredException) {
+                handleUnauthorized()
+            } catch (_: Exception) {
+                _uiState.update { state ->
+                    state.copy(createForm = state.createForm.copy(isSearchingRecipients = false))
+                }
+            }
+        }
+    }
+
+    fun addRecipient(user: UserDto) {
+        val selfId = _uiState.value.currentUserId
+        if (user.id == selfId) return
+        val currentRecipients = _uiState.value.createForm.selectedRecipients
+        if (currentRecipients.any { it.id == user.id }) {
+            _uiState.update { state ->
+                state.copy(
+                    createForm = state.createForm.copy(
+                        recipientSearchQuery = "",
+                        recipientSearchResults = emptyList()
+                    )
+                )
+            }
+            return
+        }
+        if (currentRecipients.size >= 10) {
+            _snackbarEvents.tryEmit(appContext.getString(R.string.recipients_max_limit))
+            return
+        }
+        _uiState.update { state ->
+            state.copy(
+                createForm = state.createForm.copy(
+                    selectedRecipients = state.createForm.selectedRecipients + user,
+                    recipientSearchQuery = "",
+                    recipientSearchResults = emptyList(),
+                    isSearchingRecipients = false
+                )
+            )
+        }
+    }
+
+    fun removeRecipient(userId: String) {
+        _uiState.update { state ->
+            state.copy(
+                createForm = state.createForm.copy(
+                    selectedRecipients = state.createForm.selectedRecipients.filterNot { it.id == userId }
+                )
+            )
+        }
+    }
+
     fun openJoinDialog() {
         _uiState.update { it.copy(showJoinDialog = true, joinInviteCodeInput = "") }
     }
@@ -525,6 +630,7 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
                         joinInviteCodeInput = ""
                     )
                 }
+                syncUnlockNotifications()
                 _snackbarEvents.tryEmit(appContext.getString(R.string.join_success_msg, joined.title))
                 onJoined()
             } catch (e: CancellationException) {
@@ -670,6 +776,7 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
                         _snackbarEvents.tryEmit(appContext.getString(R.string.capsule_just_unlocked_snackbar, fresh.title))
                     }
                 }
+                syncUnlockNotifications()
             } catch (e: CancellationException) {
                 throw e
             } catch (_: SessionExpiredException) {
@@ -753,12 +860,18 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(selectedTab = tabIndex) }
     }
 
-    // --- Capsule Actions: Open, Archive, Unarchive ---
+    // --- Capsule Actions: Open, Archive, Unarchive, Block ---
+    private fun syncUnlockNotifications() {
+        val state = _uiState.value
+        CapsuleUnlockScheduler.sync(appContext, state.capsules, state.isNotificationsEnabled)
+    }
+
     fun openCapsule(capsuleId: String, onOpened: () -> Unit = {}) {
         viewModelScope.launch {
             try {
                 val updated = remoteRepository.openCapsule(capsuleId)
                 updateCapsuleInState(updated)
+                syncUnlockNotifications()
                 _snackbarEvents.tryEmit(appContext.getString(R.string.capsule_opened_success, updated.title))
                 onOpened()
             } catch (e: CancellationException) {
@@ -776,6 +889,7 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val updated = remoteRepository.archiveCapsule(capsuleId)
                 updateCapsuleInState(updated)
+                syncUnlockNotifications()
                 _snackbarEvents.tryEmit(appContext.getString(R.string.capsule_archived_success, updated.title))
             } catch (e: CancellationException) {
                 throw e
@@ -792,6 +906,7 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val updated = remoteRepository.unarchiveCapsule(capsuleId)
                 updateCapsuleInState(updated)
+                syncUnlockNotifications()
                 _snackbarEvents.tryEmit(appContext.getString(R.string.capsule_unarchived_success, updated.title))
             } catch (e: CancellationException) {
                 throw e
@@ -799,6 +914,28 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
                 handleUnauthorized()
             } catch (e: Exception) {
                 _snackbarEvents.tryEmit(e.localizedMessage ?: "Ошибка разархивации")
+            }
+        }
+    }
+
+    fun blockSender(senderUserId: String) {
+        viewModelScope.launch {
+            try {
+                remoteRepository.blockUser(senderUserId)
+                _uiState.update { state ->
+                    state.copy(
+                        capsules = state.capsules.filterNot { it.creatorId == senderUserId }
+                    )
+                }
+                syncUnlockNotifications()
+                _snackbarEvents.tryEmit(appContext.getString(R.string.sender_blocked_success))
+                loadCapsules(isPullToRefresh = false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: SessionExpiredException) {
+                handleUnauthorized()
+            } catch (e: Exception) {
+                _snackbarEvents.tryEmit(e.localizedMessage ?: "Не удалось заблокировать отправителя")
             }
         }
     }
@@ -1071,7 +1208,21 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         val participants = if (form.isGeoLocked) {
             (form.selectedParticipantIds + creatorId).distinct()
         } else {
-            listOf(creatorId)
+            (listOf(creatorId) + form.selectedRecipients.map { it.id }).distinct()
+        }
+
+        val recipientHandles = if (form.isGeoLocked) {
+            emptyList()
+        } else {
+            form.selectedRecipients.mapNotNull { it.handle?.trim()?.removePrefix("@") }.filter { it.isNotEmpty() }
+        }
+
+        val recipientLabel = if (!form.isGeoLocked && form.selectedRecipients.isNotEmpty()) {
+            form.selectedRecipients.joinToString(", ") { user ->
+                user.handle?.let { "@$it" } ?: user.username
+            }.take(255)
+        } else {
+            form.recipient.trim().takeIf { it.isNotEmpty() }
         }
 
         val request = CreateCapsuleRequest(
@@ -1090,9 +1241,10 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
                 )
             },
             kind = form.kind.ifEmpty { "MESSAGE" },
-            recipient = form.recipient.trim().takeIf { it.isNotEmpty() },
+            recipient = recipientLabel,
             tags = cleanTags,
-            isGeoLocked = form.isGeoLocked
+            isGeoLocked = form.isGeoLocked,
+            recipientHandles = recipientHandles
         )
 
         viewModelScope.launch {
@@ -1109,6 +1261,7 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
                         )
                     )
                 }
+                syncUnlockNotifications()
                 _snackbarEvents.tryEmit(appContext.getString(R.string.create_capsule_success, created.title))
                 onCreated()
             } catch (e: CancellationException) {
@@ -1175,8 +1328,12 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun onAppForegrounded() {
-        if (_uiState.value.isPinSet) {
+        val current = _uiState.value
+        if (current.isPinSet) {
             _uiState.update { it.copy(isPinUnlocked = false) }
+        }
+        if (current.isAuthenticated && !current.currentUserHandle.isNullOrBlank()) {
+            loadCapsules(isPullToRefresh = false)
         }
     }
 
@@ -1184,6 +1341,11 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             UserPreferences.setNotificationsEnabled(appContext, enabled)
             _uiState.update { it.copy(isNotificationsEnabled = enabled) }
+            if (enabled) {
+                syncUnlockNotifications()
+            } else {
+                CapsuleUnlockScheduler.cancelAll(appContext)
+            }
         }
     }
 
@@ -1260,6 +1422,7 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
             _uiState.update { it.copy(isDeletingData = true) }
             try {
                 remoteRepository.deleteMyData()
+                CapsuleUnlockScheduler.cancelAll(appContext)
                 UserPreferences.clearPin(appContext)
                 ApiConfig.clearSession(appContext)
                 _uiState.update { state ->

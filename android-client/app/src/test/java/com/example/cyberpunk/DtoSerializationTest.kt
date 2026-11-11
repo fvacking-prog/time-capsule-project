@@ -1,5 +1,6 @@
 package com.example.cyberpunk
 
+import com.timecapsule.shared.BlockUserRequest
 import com.timecapsule.shared.CapsuleDto
 import com.timecapsule.shared.CapsuleStageDto
 import com.timecapsule.shared.CheckHandleResponse
@@ -67,7 +68,10 @@ class DtoSerializationTest {
             lastSeenAt = 1794300010000L,
             isNearbyAndRecent = true,
             openedAt = 1794300020000L,
-            archived = false
+            archived = false,
+            handle = "alice_99",
+            avatarUrl = "https://example.com/a.png",
+            role = "RECIPIENT"
         )
         val capsule = CapsuleDto(
             id = "cap_1",
@@ -87,7 +91,9 @@ class DtoSerializationTest {
             isGeoLocked = true,
             status = "OPENED",
             openedAt = 1794300020000L,
-            archived = false
+            archived = false,
+            creatorHandle = "sender_alice",
+            isInbox = true
         )
 
         val encoded = json.encodeToString(capsule)
@@ -112,11 +118,15 @@ class DtoSerializationTest {
             kind = "MESSAGE",
             recipient = "Дочери",
             tags = listOf("семья"),
-            isGeoLocked = false
+            isGeoLocked = false,
+            recipientHandles = listOf("bob_99")
         )
         val encoded = json.encodeToString(req)
         val decoded = json.decodeFromString<CreateCapsuleRequest>(encoded)
         assertEquals(req, decoded)
+
+        val blockReq = BlockUserRequest(userId = "u_spam")
+        assertEquals(blockReq, json.decodeFromString(json.encodeToString(blockReq)))
     }
 
     @Test

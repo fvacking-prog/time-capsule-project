@@ -1,10 +1,13 @@
 package com.example.cyberpunk
 
 import com.example.cyberpunk.data.ApiConfig
+import com.example.cyberpunk.data.CapsuleUnlockScheduler
 import com.example.cyberpunk.data.GeoHelper
 import com.example.cyberpunk.data.HandleLocalValidation
 import com.example.cyberpunk.data.HandleValidator
 import com.example.cyberpunk.data.UnlockDateTimeHelper
+import com.timecapsule.shared.CapsuleDto
+import com.timecapsule.shared.CapsuleStageDto
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
@@ -126,6 +129,47 @@ class UnlockAndConfigUnitTest {
         assertEquals(HandleLocalValidation.RESERVED, HandleValidator.validateLocal("admin"))
         assertEquals(HandleLocalValidation.RESERVED, HandleValidator.validateLocal("@Support"))
         assertEquals(HandleLocalValidation.RESERVED, HandleValidator.validateLocal("timecapsule"))
+    }
+
+    @Test
+    fun `CapsuleUnlockScheduler plans notifications only for future locked non-archived capsules`() {
+        val now = 1_700_000_000_000L
+        val lockedInbox = CapsuleDto(
+            id = "cap_locked_inbox",
+            title = "Inbox future",
+            latitude = 0.0,
+            longitude = 0.0,
+            radiusMeters = 50.0,
+            isGroupCapsule = false,
+            isFullyUnlocked = false,
+            stages = listOf(CapsuleStageDto("s1", 1, now + 120_000L, "[ЗАШИФРОВАНО]", false)),
+            participants = emptyList(),
+            status = "SEALED",
+            creatorHandle = "alice",
+            isInbox = true
+        )
+        val openedCap = lockedInbox.copy(id = "cap_opened", status = "OPENED")
+        val archivedCap = lockedInbox.copy(id = "cap_arch", archived = true, status = "ARCHIVED")
+        val pastUnlocked = lockedInbox.copy(
+            id = "cap_ready",
+            status = "READY",
+            isFullyUnlocked = true,
+            stages = listOf(CapsuleStageDto("s2", 1, now - 10_000L, "Open", true))
+        )
+
+        val disabledPlans = CapsuleUnlockScheduler.computePlans(listOf(lockedInbox), notificationsEnabled = false, nowMillis = now)
+        assertTrue(disabledPlans.isEmpty())
+
+        val plans = CapsuleUnlockScheduler.computePlans(
+            capsules = listOf(lockedInbox, openedCap, archivedCap, pastUnlocked),
+            notificationsEnabled = true,
+            nowMillis = now
+        )
+        assertEquals(1, plans.size)
+        assertEquals("cap_locked_inbox", plans.first().capsuleId)
+        assertEquals(120_000L, plans.first().delayMillis)
+        assertEquals("alice", plans.first().creatorHandle)
+        assertTrue(plans.first().isInbox)
     }
 }
 
