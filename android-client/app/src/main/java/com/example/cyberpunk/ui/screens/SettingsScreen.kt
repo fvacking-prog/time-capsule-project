@@ -56,6 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.example.cyberpunk.BuildConfig
 import com.example.cyberpunk.R
 import com.example.cyberpunk.ui.theme.TokyoAccent
 import com.example.cyberpunk.ui.theme.TokyoBackground
@@ -71,7 +72,6 @@ import com.example.cyberpunk.ui.viewmodel.CapsuleUiState
 fun SettingsScreen(
     uiState: CapsuleUiState,
     onOpenServerSettings: () -> Unit,
-    onDemoModeToggle: (Boolean) -> Unit,
     onOpenSetPinDialog: () -> Unit,
     onRemovePin: () -> Unit,
     onToggleNotifications: (Boolean) -> Unit,
@@ -272,80 +272,52 @@ fun SettingsScreen(
             }
         }
 
-        // БЛОК: СЕТЬ И РЕЖИМ ДЕМО
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = TokyoSurface),
-            shape = RoundedCornerShape(18.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+        // БЛОК: СЕТЬ (ТОЛЬКО ДЛЯ DEBUG-СБОРКИ)
+        if (BuildConfig.DEBUG) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = TokyoSurface),
+                shape = RoundedCornerShape(18.dp)
             ) {
-                Text(
-                    text = "Подключение и среда",
-                    style = MaterialTheme.typography.titleSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = TokyoPrimary
-                    )
-                )
-
-                // Server URL row
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onOpenServerSettings() }
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    Text(
+                        text = stringResource(R.string.settings_network_section),
+                        style = MaterialTheme.typography.titleSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = TokyoPrimary
+                        )
+                    )
+
                     Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onOpenServerSettings() }
+                            .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Icon(Icons.Default.Dns, null, tint = TokyoAccent, modifier = Modifier.size(20.dp))
-                        Column {
-                            Text(
-                                text = "Адрес сервера (BASE_URL)",
-                                style = MaterialTheme.typography.bodyMedium.copy(color = TokyoOnBackground)
-                            )
-                            Text(
-                                text = uiState.settingsUrlInput,
-                                style = MaterialTheme.typography.bodySmall.copy(color = TokyoOnSurface)
-                            )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(Icons.Default.Dns, null, tint = TokyoAccent, modifier = Modifier.size(20.dp))
+                            Column {
+                                Text(
+                                    text = stringResource(R.string.server_url_label),
+                                    style = MaterialTheme.typography.bodyMedium.copy(color = TokyoOnBackground)
+                                )
+                                Text(
+                                    text = uiState.settingsUrlInput,
+                                    style = MaterialTheme.typography.bodySmall.copy(color = TokyoOnSurface)
+                                )
+                            }
                         }
+
+                        Icon(Icons.Default.ChevronRight, null, tint = TokyoOnSurface)
                     }
-
-                    Icon(Icons.Default.ChevronRight, null, tint = TokyoOnSurface)
-                }
-
-                // Demo mode switch
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Demo Mode",
-                            style = MaterialTheme.typography.bodyMedium.copy(color = TokyoOnBackground)
-                        )
-                        Text(
-                            text = "Автономный режим для защиты проекта",
-                            style = MaterialTheme.typography.bodySmall.copy(color = TokyoOnSurface)
-                        )
-                    }
-
-                    Switch(
-                        checked = uiState.isDemoMode,
-                        onCheckedChange = onDemoModeToggle,
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = TokyoBackground,
-                            checkedTrackColor = TokyoPrimary
-                        )
-                    )
                 }
             }
         }

@@ -1,19 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Локальные хосты для эмулятора и локальной разработки -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">localhost</domain>
-        <domain includeSubdomains="true">10.0.2.2</domain>
-        <domain includeSubdomains="true">127.0.0.1</domain>
-    </domain-config>
-
-    <!--
-      Для демонстрации на защите проекта сервер Time Capsule 2.0 запускается на ноутбуке в локальной сети (Wi-Fi LAN),
-      поэтому base-config разрешает cleartext для пользовательского IP.
-      ВНИМАНИЕ: Для публичного релиза в Google Play сервер развёртывается за reverse-proxy с SSL (HTTPS),
-      а cleartextTrafficPermitted устанавливается в false.
-    -->
-    <base-config cleartextTrafficPermitted="true">
+    <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>

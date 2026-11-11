@@ -16,63 +16,49 @@ object CryptoUtils {
     private const val TAG_LENGTH_BITS = 128
     private const val KEY_LENGTH_BYTES = 32
 
-    // 32-байтный фиксированный демо-ключ в Base64 ("0123456789abcdef0123456789abcdef")
-    const val DEMO_KEY_BASE64 = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
-
     private val secureRandom = SecureRandom()
 
-    fun isDemoMode(): Boolean {
-        val flag = System.getenv("DEMO_MODE") ?: System.getProperty("DEMO_MODE")
-        // Режим Демо активен по умолчанию, пока явно не задано DEMO_MODE=false
-        return flag?.equals("false", ignoreCase = true) != true
+    internal fun resolveConfiguredKey(): String? {
+        return System.getenv("CAPSULE_AES_KEY")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: System.getProperty("CAPSULE_AES_KEY")?.trim()?.takeIf { it.isNotEmpty() }
     }
 
-    fun validateCryptoConfig() {
-        val isDemo = isDemoMode()
-        val customKey = System.getenv("CAPSULE_AES_KEY")?.trim()
-
-        if (!isDemo && customKey.isNullOrEmpty()) {
-            val errMsg = "КРИТИЧЕСКАЯ ОШИБКА: Сервер запущен в боевом режиме (DEMO_MODE=false), но переменная окружения CAPSULE_AES_KEY не задана. Задайте 32-байтный Base64 ключ AES-256 для шифрования данных."
+    /**
+     * Проверяет и декодирует 32-байтный ключ AES-256 в формате Base64.
+     * Бросает исключение с понятным описанием при отсутствии или неверном формате ключа.
+     */
+    fun parseAesKey(rawKey: String?): SecretKeySpec {
+        val normalized = rawKey?.trim()
+        if (normalized.isNullOrEmpty()) {
+            val errMsg = "КРИТИЧЕСКАЯ ОШИБКА: Переменная окружения CAPSULE_AES_KEY не задана. Задайте 32-байтный ключ AES-256 в формате Base64 (например, через ./generate-aes-key.sh), иначе сервер не может шифровать и расшифровывать капсулы."
             logger.error(errMsg)
             throw IllegalStateException(errMsg)
         }
 
-        if (customKey.isNullOrEmpty()) {
-            logger.warn("ВНИМАНИЕ: DEMO_MODE=true. Используется демонстрационный ключ AES-256. В продакшене обязательно задайте CAPSULE_AES_KEY!")
-        } else {
-            val keyBytes = try {
-                Base64.getDecoder().decode(customKey)
-            } catch (e: Exception) {
-                val errMsg = "КРИТИЧЕСКАЯ ОШИБКА: Невозможно декодировать CAPSULE_AES_KEY из Base64: ${e.message}"
-                logger.error(errMsg)
-                throw IllegalArgumentException(errMsg, e)
-            }
-            if (keyBytes.size != KEY_LENGTH_BYTES) {
-                val errMsg = "КРИТИЧЕСКАЯ ОШИБКА: Ключ AES-256 должен быть ровно $KEY_LENGTH_BYTES байт (получено ${keyBytes.size})."
-                logger.error(errMsg)
-                throw IllegalArgumentException(errMsg)
-            }
-            logger.info("CAPSULE_AES_KEY успешно загружен и верифицирован ($KEY_LENGTH_BYTES байт).")
+        val keyBytes = try {
+            Base64.getDecoder().decode(normalized)
+        } catch (e: Exception) {
+            val errMsg = "КРИТИЧЕСКАЯ ОШИБКА: Невозможно декодировать CAPSULE_AES_KEY из Base64: ${e.message}"
+            logger.error(errMsg)
+            throw IllegalArgumentException(errMsg, e)
         }
+
+        if (keyBytes.size != KEY_LENGTH_BYTES) {
+            val errMsg = "КРИТИЧЕСКАЯ ОШИБКА: Ключ AES-256 в CAPSULE_AES_KEY должен быть ровно $KEY_LENGTH_BYTES байт (получено ${keyBytes.size})."
+            logger.error(errMsg)
+            throw IllegalArgumentException(errMsg)
+        }
+
+        return SecretKeySpec(keyBytes, "AES")
+    }
+
+    fun validateCryptoConfig(rawKey: String? = resolveConfiguredKey()) {
+        parseAesKey(rawKey)
+        logger.info("CAPSULE_AES_KEY успешно загружен и верифицирован ($KEY_LENGTH_BYTES байт).")
     }
 
     private val secretKey: SecretKeySpec by lazy {
-        val isDemo = isDemoMode()
-        val customKey = System.getenv("CAPSULE_AES_KEY")?.trim()
-
-        val base64Key = if (!customKey.isNullOrEmpty()) {
-            customKey
-        } else if (isDemo) {
-            DEMO_KEY_BASE64
-        } else {
-            throw IllegalStateException("CAPSULE_AES_KEY не задан при DEMO_MODE=false")
-        }
-
-        val keyBytes = Base64.getDecoder().decode(base64Key)
-        require(keyBytes.size == KEY_LENGTH_BYTES) {
-            "AES-256 key must be exactly $KEY_LENGTH_BYTES bytes, got ${keyBytes.size}"
-        }
-        SecretKeySpec(keyBytes, "AES")
+        parseAesKey(resolveConfiguredKey())
     }
 
     fun encrypt(plain: String): String {

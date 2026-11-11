@@ -161,8 +161,8 @@ class BackendUnitTests {
 
         // Locked: not all participants nearby
         val participants = listOf(
-            ParticipantStatusDto("user_maga", "Maga", 5.0, unlockDate, true),
-            ParticipantStatusDto("user_zainab", "Zainab", 120.0, unlockDate, false)
+            ParticipantStatusDto("user_alice", "Alice", 5.0, unlockDate, true),
+            ParticipantStatusDto("user_bob", "Bob", 120.0, unlockDate, false)
         )
         assertEquals(
             GeoUtils.LOCKED_PLACEHOLDER,
@@ -189,12 +189,22 @@ class BackendUnitTests {
     }
 
     @Test
-    fun `maskEmail masks local part of email preserving first and last characters`() {
-        assertEquals("m***a@gmail.com", maskEmail("maga@gmail.com"))
-        assertEquals("z***b@example.org", maskEmail("zainab@example.org"))
-        assertEquals("a***@gmail.com", maskEmail("ab@gmail.com"))
-        assertEquals(null, maskEmail(null))
-        assertEquals(null, maskEmail("   "))
+    fun `toUserDto never exposes email for other users`() {
+        val testDb = Database.connect(
+            url = "jdbc:h2:mem:test_email_privacy_${UUID.randomUUID()};DB_CLOSE_DELAY=-1",
+            driver = "org.h2.Driver"
+        )
+        transaction(testDb) {
+            SchemaUtils.create(Users)
+            Users.insert {
+                it[id] = "user_alice"
+                it[username] = "Alice"
+                it[email] = "alice@gmail.com"
+            }
+            val row = Users.selectAll().where { Users.id eq "user_alice" }.single()
+            assertEquals("alice@gmail.com", row.toUserDto(includeEmail = true).email)
+            assertNull(row.toUserDto(includeEmail = false).email)
+        }
     }
 
     @Test
@@ -327,7 +337,7 @@ class BackendUnitTests {
                 false
             ).executeUpdate()
             connection.prepareStatement(
-                "INSERT INTO users (id, username) VALUES ('user_maga', 'Maga');",
+                "INSERT INTO users (id, username) VALUES ('user_legacy_1', 'LegacyUser');",
                 false
             ).executeUpdate()
 
@@ -348,7 +358,7 @@ class BackendUnitTests {
 
             connection.prepareStatement(
                 "INSERT INTO capsules (id, creator_id, title, latitude, longitude, radius_meters, created_at, is_group_capsule) " +
-                    "VALUES ('old_cap_1', 'user_maga', 'Old Capsule', 40.28, 69.62, 50.0, 1000000, true);",
+                    "VALUES ('old_cap_1', 'user_legacy_1', 'Old Capsule', 40.28, 69.62, 50.0, 1000000, true);",
                 false
             ).executeUpdate()
 
@@ -366,7 +376,7 @@ class BackendUnitTests {
             ).executeUpdate()
 
             // Run migration
-            migrateAndSeedDatabase()
+            migrateDatabase()
 
             // Verify invite_code column was added and generated for the old capsule
             val migratedRow = Capsules.selectAll().where { Capsules.id eq "old_cap_1" }.single()
@@ -674,22 +684,238 @@ class BackendUnitTests {
     }
 
     @Test
-    fun `fail fast when DEMO_MODE is false and CAPSULE_AES_KEY is missing`() {
-        val prevProp = System.getProperty("DEMO_MODE")
-        try {
-            System.setProperty("DEMO_MODE", "false")
-            if (System.getenv("CAPSULE_AES_KEY").isNullOrEmpty()) {
-                assertFailsWith<IllegalStateException> {
-                    CryptoUtils.validateCryptoConfig()
+    fun `CAPSULE_AES_KEY validation fails fast on missing blank invalid base64 or wrong byte length`() {
+        val missingEx = assertFailsWith<IllegalStateException> {
+            CryptoUtils.validateCryptoConfig(null)
+        }
+        assertTrue(missingEx.message?.contains("CAPSULE_AES_KEY") == true)
+
+        assertFailsWith<IllegalStateException> {
+            CryptoUtils.validateCryptoConfig("   ")
+        }
+
+        val badBase64Ex = assertFailsWith<IllegalArgumentException> {
+            CryptoUtils.validateCryptoConfig("not!valid!base64")
+        }
+        assertTrue(badBase64Ex.message?.contains("Base64") == true)
+
+        // 16 bytes instead of 32 bytes
+        val shortKeyBase64 = java.util.Base64.getEncoder().encodeToString(ByteArray(16) { 1 })
+        val shortEx = assertFailsWith<IllegalArgumentException> {
+            CryptoUtils.validateCryptoConfig(shortKeyBase64)
+        }
+        assertTrue(shortEx.message?.contains("32") == true)
+
+        // Valid 32 bytes succeeds
+        val validKeyBase64 = java.util.Base64.getEncoder().encodeToString(ByteArray(32) { it.toByte() })
+        val spec = CryptoUtils.parseAesKey(validKeyBase64)
+        assertEquals("AES", spec.algorithm)
+        assertEquals(32, spec.encoded.size)
+    }
+
+    @Test
+    fun `geo capsule requires both unlockDate reached and all participants nearby within 60 seconds`() {
+        val testDb = Database.connect(
+            url = "jdbc:h2:mem:test_geo_unlock_${System.nanoTime()};DB_CLOSE_DELAY=-1",
+            driver = "org.h2.Driver"
+        )
+
+        transaction(testDb) {
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions)
+
+            Users.insert {
+                it[id] = "user_u1"
+                it[username] = "Alice"
+                it[displayName] = "Alice"
+            }
+            Users.insert {
+                it[id] = "user_u2"
+                it[username] = "Bob"
+                it[displayName] = "Bob"
+            }
+
+            val capId = "cap_geo_strict"
+            val unlockTime = 2_000_000L
+            val secret = "Строго секретный гео-этап"
+
+            Capsules.insert {
+                it[id] = capId
+                it[creatorId] = "user_u1"
+                it[title] = "Гео-капсула"
+                it[latitude] = 40.2825
+                it[longitude] = 69.6221
+                it[radiusMeters] = 50.0
+                it[createdAt] = 1_000_000L
+                it[isGroupCapsule] = true
+                it[inviteCode] = "GEO123"
+                it[kind] = "MESSAGE"
+                it[isGeoLocked] = true
+            }
+
+            // Both participants check in cleanly at capsule center
+            CapsuleParticipants.insert {
+                it[capsuleId] = capId
+                it[userId] = "user_u1"
+                it[lastLat] = 40.2825
+                it[lastLon] = 69.6221
+                it[lastSeenAt] = unlockTime - 5_000L
+            }
+            CapsuleParticipants.insert {
+                it[capsuleId] = capId
+                it[userId] = "user_u2"
+                it[lastLat] = 40.2825
+                it[lastLon] = 69.6221
+                it[lastSeenAt] = unlockTime - 5_000L
+            }
+
+            CapsuleStages.insert {
+                it[id] = "stage_geo_1"
+                it[capsuleId] = capId
+                it[stageNumber] = 1
+                it[unlockDate] = unlockTime
+                it[encryptedText] = CryptoUtils.encrypt(secret)
+            }
+
+            // 1. All participants nearby & fresh, BEFORE unlockDate -> MUST remain SEALED
+            val beforeTime = buildCapsuleDto(capId, now = unlockTime - 1_000L, requestingUserId = "user_u1")
+            assertEquals("SEALED", beforeTime.status)
+            assertFalse(beforeTime.isFullyUnlocked)
+            assertFalse(beforeTime.stages.first().isUnlocked)
+            assertEquals(GeoUtils.LOCKED_PLACEHOLDER, beforeTime.stages.first().text)
+
+            // 2. AFTER unlockDate, both participants fresh (within 60s) -> READY & decrypted
+            val unlocked = buildCapsuleDto(capId, now = unlockTime + 10_000L, requestingUserId = "user_u1")
+            assertEquals("READY", unlocked.status)
+            assertTrue(unlocked.isFullyUnlocked)
+            assertTrue(unlocked.stages.first().isUnlocked)
+            assertEquals(secret, unlocked.stages.first().text)
+
+            // 3. AFTER unlockDate, one participant heartbeat stale (>60s) -> SEALED & encrypted again
+            val staleNow = unlockTime + 70_000L // lastSeenAt was unlockTime - 5_000 -> age = 75_000 > 60_000
+            CapsuleParticipants.update({
+                (CapsuleParticipants.capsuleId eq capId) and (CapsuleParticipants.userId eq "user_u1")
+            }) {
+                it[lastSeenAt] = staleNow
+            }
+            val staleDto = buildCapsuleDto(capId, now = staleNow, requestingUserId = "user_u1")
+            assertEquals("SEALED", staleDto.status)
+            assertFalse(staleDto.isFullyUnlocked)
+            assertFalse(staleDto.stages.first().isUnlocked)
+            assertEquals(GeoUtils.LOCKED_PLACEHOLDER, staleDto.stages.first().text)
+        }
+    }
+
+    @Test
+    fun `validateCreateCapsuleRequest rejects unlockDate earlier than 1 minute and accepts future`() {
+        val now = System.currentTimeMillis()
+        val tooSoonRequest = com.timecapsule.shared.CreateCapsuleRequest(
+            title = "Too Soon",
+            latitude = 0.0,
+            longitude = 0.0,
+            isGeoLocked = false,
+            stages = listOf(
+                com.timecapsule.shared.CreateStageRequest(
+                    stageNumber = 1,
+                    unlockDate = now + 20_000L,
+                    secretText = "Secret"
+                )
+            )
+        )
+        assertFailsWith<IllegalArgumentException> {
+            validateCreateCapsuleRequest(tooSoonRequest, "user_alice")
+        }
+
+        val validRequest = tooSoonRequest.copy(
+            stages = listOf(
+                com.timecapsule.shared.CreateStageRequest(
+                    stageNumber = 1,
+                    unlockDate = now + 65_000L,
+                    secretText = "Secret"
+                )
+            )
+        )
+        validateCreateCapsuleRequest(validRequest, "user_alice")
+    }
+
+    @Test
+    fun `load test with 50 concurrent check-ins and capsule reads does not produce 500 or deadlocks`() {
+        val testDb = Database.connect(
+            url = "jdbc:h2:mem:test_load_${System.nanoTime()};DB_CLOSE_DELAY=-1",
+            driver = "org.h2.Driver"
+        )
+        val capId = "cap_load_test"
+        transaction(testDb) {
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions)
+            Users.insert {
+                it[id] = "user_creator"
+                it[username] = "Creator"
+            }
+            Capsules.insert {
+                it[id] = capId
+                it[creatorId] = "user_creator"
+                it[title] = "Load Test Capsule"
+                it[latitude] = 40.2825
+                it[longitude] = 69.6221
+                it[radiusMeters] = 50.0
+                it[createdAt] = System.currentTimeMillis()
+                it[isGroupCapsule] = true
+                it[inviteCode] = "LOAD50"
+            }
+            for (i in 1..50) {
+                val uid = "user_load_$i"
+                Users.insert {
+                    it[id] = uid
+                    it[username] = "User$i"
+                }
+                CapsuleParticipants.insert {
+                    it[capsuleId] = capId
+                    it[userId] = uid
+                    it[lastLat] = 40.2825
+                    it[lastLon] = 69.6221
+                    it[lastSeenAt] = System.currentTimeMillis()
                 }
             }
-        } finally {
-            if (prevProp != null) {
-                System.setProperty("DEMO_MODE", prevProp)
-            } else {
-                System.setProperty("DEMO_MODE", "true")
+        }
+
+        val threadPool = java.util.concurrent.Executors.newFixedThreadPool(16)
+        val countDownLatch = java.util.concurrent.CountDownLatch(50)
+        val errors = java.util.Collections.synchronizedList(mutableListOf<Throwable>())
+
+        for (i in 1..50) {
+            val uid = "user_load_$i"
+            threadPool.submit {
+                try {
+                    transaction(testDb) {
+                        // Concurrent Check-in
+                        CapsuleParticipants.update({
+                            (CapsuleParticipants.capsuleId eq capId) and (CapsuleParticipants.userId eq uid)
+                        }) {
+                            it[lastLat] = 40.2825 + (i * 0.00001)
+                            it[lastLon] = 69.6221 + (i * 0.00001)
+                            it[lastSeenAt] = System.currentTimeMillis()
+                        }
+
+                        // Concurrent Read
+                        val visibleIds = getVisibleCapsuleIds(uid)
+                        assertTrue(visibleIds.contains(capId))
+                        val participantsCount = CapsuleParticipants
+                            .selectAll()
+                            .where { CapsuleParticipants.capsuleId eq capId }
+                            .count()
+                        assertEquals(50L, participantsCount)
+                    }
+                } catch (t: Throwable) {
+                    errors.add(t)
+                } finally {
+                    countDownLatch.countDown()
+                }
             }
         }
+
+        val completed = countDownLatch.await(15, java.util.concurrent.TimeUnit.SECONDS)
+        threadPool.shutdown()
+        assertTrue(completed, "Concurrency test timed out")
+        assertEquals(0, errors.size, "Encountered concurrency errors: ${errors.map { it.message }}")
     }
 }
 

@@ -2,6 +2,35 @@
 
 Все заметные изменения проекта «Time Capsule 2.0» документируются в этом файле.
 
+## [1.0.1] - 2026-11-11 (Стабилизация релизной сборки)
+
+### Стабилизация релизной сборки (Release Stabilization)
+- **R8 / ProGuard и целостность DTO:**
+  - Расширены правила `proguard-rules.pro` для гарантированного сохранения Ktor Client Engine (`HttpClientEngineContainer` через ServiceLoader), сериализаторов kotlinx.serialization (`*$$serializer`, `Companion`), классов ответов и исключений Credential Manager (`GetCredentialException`), googleid, DataStore, Coil и аннотаций Compose.
+  - Сохранены атрибуты `SourceFile` и `LineNumberTable` для информативных стек-трейсов в релизе.
+  - Добавлены правила `-dontwarn` для зависимостей Ktor/Netty (`java.lang.management.**`, `org.slf4j.**`, `sun.misc.Unsafe`).
+  - Добавлен `DtoSerializationTest` в `testReleaseUnitTest` для проверки round-trip сериализации/десериализации всех DTO моделей в обфусцированной среде.
+- **Диагностический тип сборки Staging:**
+  - Добавлен build type `staging` в `build.gradle.kts` (`initWith(getByName("release"))`, `isDebuggable = true`, R8 minification, debug-подпись, без суффикса `applicationId`).
+  - Сохранение `mapping.txt` для staging (30 МБ) и release (10 МБ).
+- **Жизненный цикл и UX на клиенте:**
+  - Приостановка фонового Heartbeat при уходе приложения в фон (`onStop` / `repeatOnLifecycle(STARTED)`) для предотвращения фоновых сбоев и расхода батареи. Возобновление при `onResume`.
+  - Корректное отслеживание PIN-блокировки: запрашивается только при возврате из фона, но игнорирует смену конфигурации устройства.
+  - Добавлен безопасный сценарий «Забыли PIN-код?», сбрасывающий PIN и локальные токены с переходом на экран логина.
+  - Полная поддержка Edge-to-Edge (`enableEdgeToEdge()`) и `Modifier.imePadding()` на всех формах ввода и диалогах (предотвращение перекрытия полей клавиатурой).
+  - Адаптивный рендеринг 3D-капсулы: измерение времени отрисовки кадра с отключением bloom-эффекта при времени кадра > 24 мс (гарантия 30+ FPS на бюджетных GPU).
+- **Сетевая устойчивость и обработка ошибок:**
+  - Безопасный парсинг тел 4xx/5xx ответов в Ktor Client с защитой от сбоев десериализации.
+  - Дружественные сообщения в UI для сетевых сбоев (`UnknownHostException`, `ConnectException`, `SocketTimeoutException`) вместо бесконечных лоадеров.
+  - Явная обработка ошибок `DEVELOPER_ERROR` / 10 / 12500 в Google Sign-In при несовпадении SHA-1 отпечатка ключа в консоли Google Cloud.
+- **Надёжность бэкенда (Fat JAR & H2):**
+  - Реализована задача Gradle `prepareMergedServices` для корректного слияния SPI-конфигураций `META-INF/services/*` в исполняемом `timecapsule-server.jar`.
+  - Устранена ошибка блокировки базы H2 (`JdbcSQLNonTransientConnectionException`, код 90020) с понятным сообщением об освобождении файла процесса.
+  - Реализован Graceful Shutdown Hook с выполнением SQL `SHUTDOWN` при завершении работы сервера.
+  - Eager-инициализация `GoogleIdTokenVerifier` с информативным логированием статуса проверки Google-токенов.
+  - Добавлен HTTP-заголовок `Retry-After: 60` при срабатывании `AuthRateLimiter` (429 Too Many Requests).
+  - Разработан и пройден стресс-тест на 50 одновременных check-in запросов и чтений без сбоев 500 и взаимоблокировок.
+
 ## [1.0.0] - 2026-11-10 (Official Release)
 
 ### Релизная подготовка и исправления

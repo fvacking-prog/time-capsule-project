@@ -1,3 +1,6 @@
+import java.util.zip.ZipFile
+import java.util.zip.ZipEntry
+
 plugins {
     kotlin("jvm") version "2.0.21"
     id("org.jetbrains.kotlin.plugin.serialization") version "2.0.21"
@@ -44,14 +47,45 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
-    systemProperty("DEMO_MODE", "true")
+    environment("CAPSULE_AES_KEY", "dGVzdC10aW1lLWNhcHN1bGUtYWVzLTI1Ni1rZXktMzI=")
 }
 
-tasks.named<JavaExec>("run") {
-    environment("DEMO_MODE", System.getenv("DEMO_MODE") ?: "true")
+val mergeServicesDir = layout.buildDirectory.dir("merged-services")
+
+val prepareMergedServices by tasks.registering {
+    inputs.files(configurations.runtimeClasspath)
+    outputs.dir(mergeServicesDir)
+    doLast {
+        val outDir = mergeServicesDir.get().asFile.resolve("META-INF/services")
+        outDir.mkdirs()
+        val mergedMap = mutableMapOf<String, MutableSet<String>>()
+        configurations.runtimeClasspath.get().filter { it.name.endsWith(".jar") }.forEach { jar ->
+            try {
+                ZipFile(jar).use { zip ->
+                    val entries = zip.entries()
+                    while (entries.hasMoreElements()) {
+                        val entry = entries.nextElement()
+                        if (!entry.isDirectory && entry.name.startsWith("META-INF/services/")) {
+                            val serviceName = entry.name.removePrefix("META-INF/services/")
+                            val lines = zip.getInputStream(entry).bufferedReader().readLines()
+                                .map { line -> line.trim() }
+                                .filter { line -> line.isNotEmpty() && !line.startsWith("#") }
+                            mergedMap.getOrPut(serviceName) { mutableSetOf() }.addAll(lines)
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        mergedMap.forEach { (serviceName, lines) ->
+            val serviceFile = File(outDir, serviceName)
+            serviceFile.parentFile.mkdirs()
+            serviceFile.writeText(lines.joinToString("\n") + "\n")
+        }
+    }
 }
 
 tasks.register<Jar>("fatJar") {
+    dependsOn(prepareMergedServices)
     archiveBaseName.set("timecapsule-server")
     archiveClassifier.set("")
     archiveVersion.set("")
@@ -60,9 +94,14 @@ tasks.register<Jar>("fatJar") {
         attributes["Main-Class"] = "com.timecapsule.server.ApplicationKt"
     }
     from(sourceSets.main.get().output)
-    dependsOn(configurations.runtimeClasspath)
+    from(mergeServicesDir)
     from({
-        configurations.runtimeClasspath.get().filter { it.name.endsWith("jar") }.map { zipTree(it) }
+        configurations.runtimeClasspath.get().filter { it.name.endsWith("jar") }.map { jar ->
+            zipTree(jar).matching {
+                exclude("META-INF/services/**")
+                exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
+            }
+        }
     })
 }
 

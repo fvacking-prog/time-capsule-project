@@ -10,7 +10,6 @@
     <string name="nav_settings">Настройки</string>
     <string name="nav_radar">Радар</string>
     <string name="nav_my_capsules">Капсулы</string>
-    <string name="demo_mode_label">ДЕМО</string>
     <string name="settings_content_desc">Настройки сети</string>
     <string name="profile_chip_format">%1$s</string>
     <string name="profile_select_prompt">Профиль</string>
@@ -19,38 +18,28 @@
     <string name="login_title">Time Capsule 2.0</string>
     <string name="login_subtitle">Гео-синхронизированные капсулы времени с шифрованием AES-256-GCM</string>
     <string name="btn_sign_in_google">Войти через Google</string>
-    <string name="btn_demo_login_section">Демо-вход (Maga / Zainab)</string>
-    <string name="btn_demo_login_maga">Демо-вход: Maga (user_maga)</string>
-    <string name="btn_demo_login_zainab">Демо-вход: Zainab (user_zainab)</string>
-    <string name="demo_login_hint">Запасной вариант для защиты проекта без интернета или Google-аккаунта</string>
     <string name="auth_error_cancelled">Вход через Google отменён пользователем</string>
-    <string name="auth_error_no_account">На устройстве не найден аккаунт Google. Добавьте аккаунт в настройках или используйте демо-вход.</string>
-    <string name="auth_error_missing_client_id">Не задан GOOGLE_WEB_CLIENT_ID в local.properties. Используйте демо-вход или укажите Web Client ID.</string>
+    <string name="auth_error_no_account">На устройстве не найден аккаунт Google. Добавьте аккаунт Google в настройках устройства.</string>
+    <string name="auth_error_missing_client_id">Не задан GOOGLE_WEB_CLIENT_ID для сборки приложения.</string>
     <string name="auth_error_invalid_token">Сессия истекла или токен недействителен (401). Пожалуйста, войдите снова.</string>
-    <string name="auth_error_network">Нет связи с сервером (%1$s). Проверьте URL сервера или используйте демо-режим.</string>
+    <string name="auth_error_network">Нет связи с сервером (%1$s). Проверьте подключение к интернету.</string>
     <string name="auth_error_generic">Ошибка авторизации Google: %1$s</string>
-    <string name="auth_demo_offline_notice">Сервер недоступен — выполнен автономный демо-вход (%1$s)</string>
 
     <!-- Profile Dialog -->
     <string name="profile_dialog_title">Профиль участника</string>
     <string name="profile_email_format">Email: %1$s</string>
     <string name="profile_id_format">ID: %1$s</string>
-    <string name="profile_switch_demo_title">Быстрое переключение (для защиты):</string>
     <string name="btn_logout">Выйти</string>
     <string name="logout_done">Вы вышли из аккаунта</string>
     <string name="who_are_you_title">Кто вы?</string>
     <string name="who_are_you_subtitle">Выберите профиль участника для синхронизации с гео-капсулой</string>
-    <string name="user_maga_name">Maga</string>
-    <string name="user_maga_id">user_maga</string>
-    <string name="user_maga_desc">ID: user_maga • Основатель капсулы</string>
-    <string name="user_zainab_name">Zainab</string>
-    <string name="user_zainab_id">user_zainab</string>
-    <string name="user_zainab_desc">ID: user_zainab • Соавтор капсулы</string>
 
     <!-- Server Settings Dialog -->
+    <string name="settings_network_section">Подключение (Debug)</string>
     <string name="server_settings_title">Настройки сервера</string>
     <string name="server_url_label">Базовый URL (BASE_URL)</string>
-    <string name="server_url_hint">http://192.168.1.105:8080</string>
+    <string name="server_url_hint">http://10.0.2.2:8080</string>
+    <string name="server_url_invalid">Укажите корректный URL сервера (https:// или http:// для debug)</string>
     <string name="btn_check_connection">Проверить</string>
     <string name="btn_save">Сохранить</string>
     <string name="btn_cancel">Отмена</string>
@@ -106,10 +95,8 @@
     <string name="radar_distance_meters">Дистанция до центра: %1$.1f м (радиус %2$.0f м)</string>
     <string name="radar_distance_waiting">Дистанция: ожидание координат… (радиус %1$.0f м)</string>
     <string name="heartbeat_real_active">Heartbeat: активен (чекин каждые 15 с)</string>
-    <string name="heartbeat_demo_active">Heartbeat: демо-чекин активен (каждые 15 с)</string>
-    <string name="heartbeat_demo_idle">Heartbeat: на паузе (включён Demo Mode)</string>
+    <string name="heartbeat_waiting_permission">Heartbeat: требуется разрешение на геолокацию</string>
     <string name="heartbeat_syncing_now">Синхронизация координат…</string>
-    <string name="btn_demo_force_checkin">[ДЕМО] Принудительный чекин всех</string>
     <string name="btn_open_timeline">Открыть письмо в будущее</string>
     <string name="btn_refresh">Обновить</string>
     <string name="participants_title">Участники капсулы</string>
@@ -138,7 +125,7 @@
     <string name="radius_slider_format">Радиус активации: %1$.0f м</string>
     <string name="participants_select_title">Участники капсулы</string>
     <string name="participants_search_label">Поиск друзей по имени или email</string>
-    <string name="participants_search_placeholder">Например: Zainab или z***b@gmail.com</string>
+    <string name="participants_search_placeholder">Например: Alice или a***e@gmail.com</string>
     <string name="creator_mandatory_note">(создатель выбран всегда)</string>
     <string name="stages_list_title">Этапы открытия капсулы</string>
     <string name="btn_add_stage">Добавить этап</string>
@@ -155,13 +142,9 @@
     <string name="stage_badge_current">ТЕКУЩИЙ ЭТАП</string>
     <string name="stage_current_hint">Активный этап капсулы времени</string>
 
-    <!-- Network & Mock Fallback -->
-    <string name="network_error_fallback_mock">Ошибка сети (%1$s). Загружены локальные данные.</string>
+    <!-- Network Errors -->
     <string name="network_error_snackbar">Ошибка сети: %1$s</string>
-    <string name="demo_force_checkin_done">Принудительный чекин выполнен для всех участников</string>
-    <string name="demo_force_checkin_mock_done">Сервер недоступен: применён локальный демо-чекин «все на месте»</string>
-    <string name="mock_capsule_khujand_title">Капсула Худжанд</string>
-    <string name="mock_stage_1_decrypted">Этап 1: Привет из Худжанда! Первый этап капсулы времени успешно открыт.</string>
+    <string name="error_generic">Произошла непредвиденная ошибка</string>
     <string name="locked_stage_placeholder">[ЗАШИФРОВАНО AES-256-GCM]</string>
 
     <!-- Home Screen -->
@@ -222,9 +205,14 @@
     <string name="chip_week">Через неделю</string>
     <string name="chip_month">Через месяц</string>
     <string name="chip_custom_date">Выбрать дату</string>
-    <string name="chip_demo_1min">[ДЕМО] через 1 минуту</string>
+    <string name="chip_custom_time">Время: %1$s</string>
+    <string name="time_picker_title">Выберите время открытия</string>
+    <string name="time_picker_min_hint">Минимум +1 минута от текущего времени</string>
+    <string name="validation_unlock_min_1min">Время открытия должно быть минимум на 1 минуту позже текущего</string>
     <string name="summary_card_title">Капсула останется запечатанной до:</string>
     <string name="summary_days_left">Осталось: %1$d дн.</string>
+    <string name="summary_hours_minutes_left">Осталось: %1$d ч. %2$d мин.</string>
+    <string name="summary_minutes_left">Осталось: %1$d мин.</string>
     <string name="rule_sealed_title">Если закрыто, то закрыто</string>
     <string name="rule_sealed_desc">После создания капсулу нельзя отредактировать, а секретный текст невозможно прочитать или расшифровать до наступления даты.</string>
     <string name="geo_lock_switch">Открыть только на месте (гео + друзья)</string>
@@ -267,6 +255,9 @@
     <string name="pin_incorrect">Неверный PIN-код</string>
     <string name="pin_set_success">PIN-блокировка успешно активирована</string>
     <string name="pin_removed_success">PIN-блокировка отключена</string>
+    <string name="pin_reset_success">PIN-код сброшен, выполнен выход из аккаунта</string>
+    <string name="auth_error_developer_error">Ошибка конфигурации Google-входа (DEVELOPER_ERROR): проверьте SHA-1 отпечаток сертификата в Google Cloud Console.</string>
+    <string name="auth_error_google_network">Нет подключения к сети для авторизации через Google.</string>
     <string name="btn_forgot_pin">Забыли PIN?</string>
     <string name="forgot_pin_confirm">Забыли PIN-код? Это приведёт к выходу из аккаунта и сбросу блокировки. Продолжить?</string>
     <string name="export_data_btn">Экспорт копии (JSON)</string>

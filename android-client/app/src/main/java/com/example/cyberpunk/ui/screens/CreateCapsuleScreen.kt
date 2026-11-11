@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.TextFields
@@ -54,13 +56,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.TimePickerDefaults
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -77,6 +83,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.cyberpunk.R
+import com.example.cyberpunk.data.UnlockDateTimeHelper
 import com.example.cyberpunk.ui.theme.TokyoAccent
 import com.example.cyberpunk.ui.theme.TokyoBackground
 import com.example.cyberpunk.ui.theme.TokyoError
@@ -89,7 +96,9 @@ import com.example.cyberpunk.ui.theme.TokyoSurface
 import com.example.cyberpunk.ui.viewmodel.CreateCapsuleFormState
 import com.timecapsule.shared.UserDto
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -98,7 +107,6 @@ fun CreateCapsuleScreen(
     formState: CreateCapsuleFormState,
     currentUserId: String?,
     availableUsers: List<UserDto>,
-    isDemoMode: Boolean = false,
     showConfirmDialog: Boolean = false,
     onTitleChange: (String) -> Unit,
     onKindChange: (String) -> Unit = {},
@@ -107,6 +115,7 @@ fun CreateCapsuleScreen(
     onMessageChange: (String) -> Unit = {},
     onDateChipClick: (String) -> Unit = {},
     onCustomDateSelect: (Long) -> Unit = {},
+    onCustomTimeSelect: (Int, Int) -> Boolean = { _, _ -> true },
     onGeoLockedToggle: (Boolean) -> Unit = {},
     onTakeMyLocation: () -> Unit,
     onRadiusChange: (Float) -> Unit,
@@ -115,24 +124,42 @@ fun CreateCapsuleScreen(
     onAddStage: () -> Unit,
     onRemoveStage: (Int) -> Unit,
     onStageDateChange: (Int, Long) -> Unit,
+    onStageTimeChange: (Int, Int, Int) -> Boolean = { _, _, _ -> true },
     onStageSecretChange: (Int, String) -> Unit,
     onOpenConfirmDialog: () -> Unit = {},
     onDismissConfirmDialog: () -> Unit = {},
     onSubmit: () -> Unit
 ) {
-    val creatorId = currentUserId ?: "user_maga"
+    val creatorId = currentUserId ?: ""
     val dateFormatter = remember {
-        DateTimeFormatter.ofPattern("dd.MM.yyyy")
+        DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
+            .withZone(ZoneId.systemDefault())
+    }
+    val timeFormatter = remember {
+        DateTimeFormatter.ofPattern("HH:mm")
             .withZone(ZoneId.systemDefault())
     }
 
     var showDatePickerForStageIndex by remember { mutableStateOf<Int?>(null) }
+    var showTimePickerForStageIndex by remember { mutableStateOf<Int?>(null) }
 
     // DatePicker Dialog
     if (showDatePickerForStageIndex != null) {
         val stageIdx = showDatePickerForStageIndex!!
         val initialMillis = if (stageIdx == -1) formState.unlockDateMillis else formState.stages[stageIdx].unlockDateMillis
-        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
+        val todayUtcStart = remember {
+            LocalDate.now(ZoneId.systemDefault())
+                .atStartOfDay(ZoneOffset.UTC)
+                .toInstant()
+                .toEpochMilli()
+        }
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = maxOf(initialMillis, todayUtcStart),
+            selectableDates = object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean = utcTimeMillis >= todayUtcStart
+                override fun isSelectableYear(year: Int): Boolean = year >= LocalDate.now(ZoneId.systemDefault()).year
+            }
+        )
 
         DatePickerDialog(
             onDismissRequest = { showDatePickerForStageIndex = null },
@@ -148,6 +175,7 @@ fun CreateCapsuleScreen(
                             }
                         }
                         showDatePickerForStageIndex = null
+                        showTimePickerForStageIndex = stageIdx
                     }
                 ) {
                     Text(stringResource(R.string.btn_ok), color = TokyoPrimary)
@@ -161,6 +189,83 @@ fun CreateCapsuleScreen(
         ) {
             DatePicker(state = datePickerState)
         }
+    }
+
+    // TimePicker Dialog (минимум +1 минута от текущего времени)
+    if (showTimePickerForStageIndex != null) {
+        val stageIdx = showTimePickerForStageIndex!!
+        val baseMillis = if (stageIdx == -1) formState.unlockDateMillis else formState.stages[stageIdx].unlockDateMillis
+        val nowMillis = System.currentTimeMillis()
+        val earliestZdt = UnlockDateTimeHelper.earliestValidUnlockDateTime(nowMillis)
+        val effectiveMillis = maxOf(baseMillis, earliestZdt.toInstant().toEpochMilli())
+        val initialZdt = Instant.ofEpochMilli(effectiveMillis).atZone(ZoneId.systemDefault())
+
+        val timePickerState = rememberTimePickerState(
+            initialHour = initialZdt.hour,
+            initialMinute = initialZdt.minute,
+            is24Hour = true
+        )
+
+        AlertDialog(
+            onDismissRequest = { showTimePickerForStageIndex = null },
+            containerColor = TokyoSurface,
+            title = {
+                Text(
+                    text = stringResource(R.string.time_picker_title),
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = TokyoPrimary
+                    )
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TimePicker(
+                        state = timePickerState,
+                        colors = TimePickerDefaults.colors(
+                            clockDialColor = TokyoBackground,
+                            selectorColor = TokyoPrimary,
+                            containerColor = TokyoSurface,
+                            clockDialSelectedContentColor = TokyoBackground,
+                            clockDialUnselectedContentColor = TokyoOnBackground,
+                            timeSelectorSelectedContainerColor = TokyoPrimary.copy(alpha = 0.25f),
+                            timeSelectorUnselectedContainerColor = TokyoBackground,
+                            timeSelectorSelectedContentColor = TokyoPrimary,
+                            timeSelectorUnselectedContentColor = TokyoOnBackground
+                        )
+                    )
+                    Text(
+                        text = stringResource(R.string.time_picker_min_hint),
+                        style = MaterialTheme.typography.bodySmall.copy(color = TokyoOnSurface)
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val accepted = if (stageIdx == -1) {
+                            onCustomTimeSelect(timePickerState.hour, timePickerState.minute)
+                        } else {
+                            onStageTimeChange(stageIdx, timePickerState.hour, timePickerState.minute)
+                        }
+                        if (accepted) {
+                            showTimePickerForStageIndex = null
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.btn_ok), color = TokyoPrimary)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTimePickerForStageIndex = null }) {
+                    Text(stringResource(R.string.btn_cancel), color = TokyoOnSurface)
+                }
+            }
+        )
     }
 
     // Confirmation Dialog before sealing
@@ -210,6 +315,7 @@ fun CreateCapsuleScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(TokyoBackground)
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
@@ -418,23 +524,25 @@ fun CreateCapsuleScreen(
                         label = { Text(stringResource(R.string.chip_month)) }
                     )
 
-                    if (isDemoMode) {
-                        FilterChip(
-                            selected = formState.selectedDateChip == "DEMO_1MIN",
-                            onClick = { onDateChipClick("DEMO_1MIN") },
-                            label = { Text(stringResource(R.string.chip_demo_1min)) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = TokyoAccent.copy(alpha = 0.2f),
-                                selectedLabelColor = TokyoAccent
-                            )
-                        )
-                    }
-
                     FilterChip(
                         selected = formState.selectedDateChip == "CUSTOM",
                         onClick = { showDatePickerForStageIndex = -1 },
                         label = { Text(stringResource(R.string.chip_custom_date)) },
                         leadingIcon = { Icon(Icons.Default.CalendarMonth, null, modifier = Modifier.size(16.dp)) }
+                    )
+
+                    val timeStr = runCatching {
+                        timeFormatter.format(Instant.ofEpochMilli(formState.unlockDateMillis))
+                    }.getOrDefault("00:00")
+                    FilterChip(
+                        selected = formState.selectedDateChip == "CUSTOM",
+                        onClick = { showTimePickerForStageIndex = -1 },
+                        label = { Text(stringResource(R.string.chip_custom_time, timeStr)) },
+                        leadingIcon = { Icon(Icons.Default.Schedule, null, modifier = Modifier.size(16.dp)) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = TokyoAccent.copy(alpha = 0.2f),
+                            selectedLabelColor = TokyoAccent
+                        )
                     )
                 }
 
@@ -442,7 +550,19 @@ fun CreateCapsuleScreen(
                 val dateStr = runCatching {
                     dateFormatter.format(Instant.ofEpochMilli(formState.unlockDateMillis))
                 }.getOrDefault("${formState.unlockDateMillis}")
-                val daysLeft = maxOf(0L, (formState.unlockDateMillis - System.currentTimeMillis()) / (24 * 60 * 60 * 1000L))
+                val remainingMillis = maxOf(0L, formState.unlockDateMillis - System.currentTimeMillis())
+                val daysLeft = remainingMillis / (24L * 60L * 60L * 1000L)
+                val hoursLeft = (remainingMillis / (60L * 60L * 1000L)) % 24L
+                val minutesLeft = maxOf(1L, (remainingMillis + 59_999L) / 60_000L)
+                val remainingText = when {
+                    daysLeft >= 1L -> stringResource(R.string.summary_days_left, daysLeft)
+                    hoursLeft >= 1L -> stringResource(
+                        R.string.summary_hours_minutes_left,
+                        hoursLeft,
+                        (remainingMillis / 60_000L) % 60L
+                    )
+                    else -> stringResource(R.string.summary_minutes_left, minutesLeft)
+                }
 
                 Box(
                     modifier = Modifier
@@ -457,7 +577,7 @@ fun CreateCapsuleScreen(
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "$dateStr (${stringResource(R.string.summary_days_left, daysLeft)})",
+                            text = "$dateStr ($remainingText)",
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = TokyoAccent

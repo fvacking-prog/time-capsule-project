@@ -8,7 +8,6 @@ import com.timecapsule.shared.CapsuleDto
 import com.timecapsule.shared.CapsuleStageDto
 import com.timecapsule.shared.CheckInRequest
 import com.timecapsule.shared.CreateCapsuleRequest
-import com.timecapsule.shared.DemoAuthRequest
 import com.timecapsule.shared.GoogleAuthRequest
 import com.timecapsule.shared.MessageResponse
 import com.timecapsule.shared.ParticipantStatusDto
@@ -17,7 +16,6 @@ import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.header
 import io.ktor.server.request.receive
-import io.ktor.server.request.receiveNullable
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
@@ -131,16 +129,21 @@ object AuthRateLimiter {
     private const val MAX_ATTEMPTS = 20
     private const val WINDOW_MILLIS = 60_000L
 
-    fun checkOrThrow(clientIp: String) {
+    fun checkOrThrow(clientIp: String, route: String = "auth") {
+        val key = "$clientIp:$route"
         val now = System.currentTimeMillis()
-        val list = attempts.computeIfAbsent(clientIp) { java.util.Collections.synchronizedList(mutableListOf()) }
+        val list = attempts.computeIfAbsent(key) { java.util.Collections.synchronizedList(mutableListOf()) }
         synchronized(list) {
             list.removeIf { now - it > WINDOW_MILLIS }
             if (list.size >= MAX_ATTEMPTS) {
-                throw TooManyRequestsException("Слишком много попыток авторизации. Повторите через минуту.")
+                throw TooManyRequestsException("Слишком много попыток авторизации. Повторите через 60 секунд.")
             }
             list.add(now)
         }
+    }
+
+    fun clear() {
+        attempts.clear()
     }
 }
 
@@ -153,7 +156,7 @@ fun Route.capsuleRoutes() {
         post("/google") {
             val clientIp = call.request.header("X-Forwarded-For")?.split(",")?.firstOrNull()?.trim()
                 ?: call.request.local.remoteHost
-            AuthRateLimiter.checkOrThrow(clientIp)
+            AuthRateLimiter.checkOrThrow(clientIp, "google")
 
             val request = call.receive<GoogleAuthRequest>()
             val rawIdToken = request.idToken.trim()
@@ -202,42 +205,6 @@ fun Route.capsuleRoutes() {
             }
             call.respond(authResponse)
         }
-
-        // ТОЛЬКО ДЛЯ ДЕМО НА ЗАЩИТЕ ПРОЕКТА
-        post("/demo") {
-            val clientIp = call.request.header("X-Forwarded-For")?.split(",")?.firstOrNull()?.trim()
-                ?: call.request.local.remoteHost
-            AuthRateLimiter.checkOrThrow(clientIp)
-
-            if (!isDemoModeEnabled()) {
-                throw ForbiddenException("Demo mode is disabled")
-            }
-            val bodyRequest = runCatching { call.receiveNullable<DemoAuthRequest>() }.getOrNull()
-            val requestedUserId = (bodyRequest?.userId?.takeIf { it.isNotBlank() }
-                ?: call.request.queryParameters["userId"]?.takeIf { it.isNotBlank() })
-                ?.trim()
-                ?: throw IllegalArgumentException("userId is required for demo login")
-
-            if (requestedUserId != "user_maga" && requestedUserId != "user_zainab") {
-                throw IllegalArgumentException("Only demo users (user_maga, user_zainab) are allowed for demo login")
-            }
-
-            val authResponse = transaction {
-                val userRow = Users
-                    .selectAll()
-                    .where { Users.id eq requestedUserId }
-                    .singleOrNull()
-                    ?: throw ParticipantNotFoundException("Demo user '$requestedUserId' not found")
-
-                val now = System.currentTimeMillis()
-                val token = createSessionToken(requestedUserId, now)
-                AuthResponse(
-                    user = userRow.toUserDto(maskUserEmail = false),
-                    sessionToken = token
-                )
-            }
-            call.respond(authResponse)
-        }
     }
 
     get("/api/v1/me") {
@@ -248,7 +215,7 @@ fun Route.capsuleRoutes() {
                 .where { Users.id eq currentUserId }
                 .singleOrNull()
                 ?: throw UnauthorizedException("User not found for session")
-            row.toUserDto(maskUserEmail = false)
+            row.toUserDto(includeEmail = true)
         }
         call.respond(userDto)
     }
@@ -285,16 +252,14 @@ fun Route.capsuleRoutes() {
                     } else {
                         val name = row[Users.displayName] ?: row[Users.username]
                         val username = row[Users.username]
-                        val email = row[Users.email].orEmpty()
                         name.contains(query, ignoreCase = true) ||
-                            username.contains(query, ignoreCase = true) ||
-                            email.contains(query, ignoreCase = true)
+                            username.contains(query, ignoreCase = true)
                     }
                 }
                 .take(50)
                 .map { row ->
                     val isSelf = row[Users.id] == currentUserId
-                    row.toUserDto(maskUserEmail = !isSelf)
+                    row.toUserDto(includeEmail = isSelf)
                 }
         }
         call.respond(users)
@@ -420,39 +385,6 @@ fun Route.capsuleRoutes() {
 
                 if (updated == 0) {
                     throw ParticipantNotFoundException("Participant '$authenticatedUserId' not found in capsule '$capsuleId'")
-                }
-
-                buildCapsuleDto(capsuleId, now, requestingUserId = authenticatedUserId)
-            }
-            call.respond(capsule)
-        }
-
-        // ТОЛЬКО ДЛЯ ДЕМО НА ЗАЩИТЕ ПРОЕКТА
-        post("/{id}/demo-force-checkin") {
-            val authenticatedUserId = call.requireAuthenticatedUserId()
-            if (!isDemoModeEnabled()) {
-                throw ForbiddenException("Demo mode is disabled")
-            }
-            val capsuleId = call.parameters["id"] ?: throw CapsuleNotFoundException("Missing capsule id")
-            val capsule = transaction {
-                if (!canUserAccessCapsule(capsuleId, authenticatedUserId)) {
-                    throw CapsuleNotFoundException("Capsule '$capsuleId' not found")
-                }
-
-                val capsuleRow = Capsules
-                    .selectAll()
-                    .where { Capsules.id eq capsuleId }
-                    .singleOrNull()
-                    ?: throw CapsuleNotFoundException("Capsule '$capsuleId' not found")
-
-                val centerLat = capsuleRow[Capsules.latitude]
-                val centerLon = capsuleRow[Capsules.longitude]
-                val now = System.currentTimeMillis()
-
-                CapsuleParticipants.update({ CapsuleParticipants.capsuleId eq capsuleId }) {
-                    it[lastLat] = centerLat
-                    it[lastLon] = centerLon
-                    it[lastSeenAt] = now
                 }
 
                 buildCapsuleDto(capsuleId, now, requestingUserId = authenticatedUserId)
@@ -621,29 +553,13 @@ internal fun ApplicationCall.requireAuthenticatedUserId(): String {
     }
 }
 
-internal fun maskEmail(email: String?): String? {
-    val trimmed = email?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-    val atIndex = trimmed.indexOf('@')
-    if (atIndex <= 0 || atIndex == trimmed.lastIndex) {
-        return "***"
-    }
-    val local = trimmed.substring(0, atIndex)
-    val domain = trimmed.substring(atIndex + 1)
-    val maskedLocal = if (local.length <= 2) {
-        "${local.first()}***"
-    } else {
-        "${local.first()}***${local.last()}"
-    }
-    return "$maskedLocal@$domain"
-}
-
-private fun ResultRow.toUserDto(maskUserEmail: Boolean): UserDto {
+internal fun ResultRow.toUserDto(includeEmail: Boolean): UserDto {
     val rawEmail = this[Users.email]
     val display = this[Users.displayName]?.takeIf { it.isNotBlank() } ?: this[Users.username]
     return UserDto(
         id = this[Users.id],
         username = display,
-        email = if (maskUserEmail) maskEmail(rawEmail) else rawEmail,
+        email = if (includeEmail) rawEmail else null,
         photoUrl = this[Users.photoUrl]
     )
 }
@@ -655,12 +571,7 @@ private const val MAX_STAGES_COUNT = 50
 private const val MAX_PARTICIPANTS_COUNT = 100
 private const val MAX_RADIUS_METERS = 100_000.0
 
-private fun isDemoModeEnabled(): Boolean {
-    val flag = System.getenv("DEMO_MODE") ?: System.getProperty("DEMO_MODE")
-    return flag?.equals("true", ignoreCase = true) == true
-}
-
-private fun validateCreateCapsuleRequest(request: CreateCapsuleRequest, authenticatedUserId: String) {
+internal fun validateCreateCapsuleRequest(request: CreateCapsuleRequest, authenticatedUserId: String) {
     require(authenticatedUserId.isNotBlank() && authenticatedUserId.length <= MAX_ID_LENGTH) {
         "Invalid creatorId"
     }
@@ -690,7 +601,7 @@ private fun validateCreateCapsuleRequest(request: CreateCapsuleRequest, authenti
         "Stage numbers must be positive and unique"
     }
     val now = System.currentTimeMillis()
-    val minUnlockDate = if (isDemoModeEnabled()) now - 10_000L else now + 50_000L
+    val minUnlockDate = now + 50_000L
     require(request.stages.all { it.unlockDate >= minUnlockDate }) {
         "Дата открытия должна быть в будущем (минимум +1 минута)"
     }
@@ -806,11 +717,7 @@ fun buildCapsuleDto(
             )
         }
 
-    val isFullyUnlocked = if (!isGeoLocked) {
-        stages.isNotEmpty() && stages.any { now >= it.unlockDate }
-    } else {
-        allParticipantsNearbyAndRecent
-    }
+    val isFullyUnlocked = stages.isNotEmpty() && stages.any { it.isUnlocked } && allParticipantsNearbyAndRecent
 
     val isMember = requestingUserId != null && (
         capsuleRow[Capsules.creatorId] == requestingUserId ||

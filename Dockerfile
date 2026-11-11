@@ -13,8 +13,8 @@ WORKDIR /app
 COPY --from=builder /app/backend/build/libs/timecapsule-server.jar ./timecapsule-server.jar
 
 ENV PORT=8080
-ENV DEMO_MODE=true
 ENV H2_URL="jdbc:h2:file:/app/data/timecapsule;DB_CLOSE_DELAY=-1"
+# CAPSULE_AES_KEY обязателен при запуске контейнера (32 байта в Base64)
 
 VOLUME ["/app/data"]
 EXPOSE 8080

@@ -5,6 +5,7 @@
 -dontnote kotlinx.serialization.AnnotationsKt
 
 # 1. kotlinx.serialization & Time Capsule DTOs
+-keep class *$$serializer { *; }
 -keepclassmembers class * {
     *** Companion;
 }
@@ -21,10 +22,16 @@
 -keepclassmembers class com.timecapsule.shared.** { *; }
 -keepnames class kotlinx.serialization.json.** { *; }
 
-# 2. Ktor Client & OkHttp
+# 2. Ktor Client & OkHttp (ServiceLoader & Engines)
+-keep class * implements io.ktor.client.engine.HttpClientEngineContainer { *; }
+-keep class io.ktor.client.engine.** { *; }
+-keepnames class * implements io.ktor.client.engine.HttpClientEngineContainer
 -keep class io.ktor.** { *; }
 -keepclassmembers class io.ktor.** { *; }
 -dontwarn io.ktor.**
+-dontwarn java.lang.management.**
+-dontwarn org.slf4j.**
+-dontwarn sun.misc.Unsafe
 -keep class okhttp3.** { *; }
 -keep interface okhttp3.** { *; }
 -dontwarn okhttp3.**

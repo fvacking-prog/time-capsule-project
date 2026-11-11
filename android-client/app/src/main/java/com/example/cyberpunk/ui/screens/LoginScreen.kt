@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,18 +17,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
@@ -54,8 +50,6 @@ import com.example.cyberpunk.ui.theme.TokyoBackground
 import com.example.cyberpunk.ui.theme.TokyoOnBackground
 import com.example.cyberpunk.ui.theme.TokyoOnSurface
 import com.example.cyberpunk.ui.theme.TokyoPrimary
-import com.example.cyberpunk.ui.theme.TokyoSecondary
-import com.example.cyberpunk.ui.theme.TokyoSuccess
 import com.example.cyberpunk.ui.theme.TokyoSurface
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -67,7 +61,6 @@ fun LoginScreen(
     isAuthenticating: Boolean,
     onGoogleIdTokenReceived: (String) -> Unit,
     onGoogleSignInError: (String) -> Unit,
-    onDemoSignIn: (String) -> Unit,
     onOpenSettings: () -> Unit
 ) {
     val context = LocalContext.current
@@ -83,17 +76,19 @@ fun LoginScreen(
             .fillMaxSize()
             .background(TokyoBackground)
     ) {
-        IconButton(
-            onClick = onOpenSettings,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(12.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Settings,
-                contentDescription = stringResource(R.string.settings_content_desc),
-                tint = TokyoPrimary
-            )
+        if (BuildConfig.DEBUG) {
+            IconButton(
+                onClick = onOpenSettings,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = stringResource(R.string.settings_content_desc),
+                    tint = TokyoPrimary
+                )
+            }
         }
 
         Column(
@@ -206,12 +201,16 @@ fun LoginScreen(
                                         )
                                     )
                                 } catch (e: GetCredentialException) {
-                                    onGoogleSignInError(
-                                        context.getString(
-                                            R.string.auth_error_generic,
-                                            e.errorMessage?.toString() ?: e.type
-                                        )
-                                    )
+                                    val err = e.errorMessage?.toString() ?: e.type
+                                    val friendlyMsg = when {
+                                        err.contains("DEVELOPER_ERROR", ignoreCase = true) || err.contains("code: 10", ignoreCase = true) ->
+                                            context.getString(R.string.auth_error_developer_error)
+                                        err.contains("NETWORK", ignoreCase = true) || err.contains("7:", ignoreCase = true) ->
+                                            context.getString(R.string.auth_error_google_network)
+                                        else ->
+                                            context.getString(R.string.auth_error_generic, err)
+                                    }
+                                    onGoogleSignInError(friendlyMsg)
                                 } catch (e: Exception) {
                                     onGoogleSignInError(
                                         context.getString(
@@ -251,73 +250,6 @@ fun LoginScreen(
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
-                    }
-
-                    HorizontalDivider(color = TokyoOnSurface.copy(alpha = 0.2f))
-
-                    Text(
-                        text = stringResource(R.string.btn_demo_login_section),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = TokyoAccent
-                    )
-
-                    Text(
-                        text = stringResource(R.string.demo_login_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TokyoOnSurface,
-                        textAlign = TextAlign.Center
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { onDemoSignIn("user_maga") },
-                            enabled = !isAuthenticating,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, TokyoSuccess)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Person,
-                                contentDescription = null,
-                                tint = TokyoSuccess,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = stringResource(R.string.user_maga_name),
-                                color = TokyoOnBackground,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-
-                        OutlinedButton(
-                            onClick = { onDemoSignIn("user_zainab") },
-                            enabled = !isAuthenticating,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, TokyoSecondary)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Person,
-                                contentDescription = null,
-                                tint = TokyoSecondary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = stringResource(R.string.user_zainab_name),
-                                color = TokyoOnBackground,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
                     }
                 }
             }

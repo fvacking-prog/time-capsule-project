@@ -17,11 +17,6 @@ data class GoogleAuthRequest(
 )
 
 @Serializable
-data class DemoAuthRequest(
-    val userId: String
-)
-
-@Serializable
 data class AuthResponse(
     val user: UserDto,
     val sessionToken: String

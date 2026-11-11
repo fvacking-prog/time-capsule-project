@@ -5,16 +5,27 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export JAVA_HOME="${JAVA_HOME:-/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home}"
 export PATH="$JAVA_HOME/bin:$PATH"
 
+if [ -f "$DIR/.env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "$DIR/.env"
+    set +a
+fi
+
 PORT="${PORT:-8080}"
-export DEMO_MODE="${DEMO_MODE:-true}"
 export CAPSULE_AES_KEY="${CAPSULE_AES_KEY:-}"
 export GOOGLE_WEB_CLIENT_ID="${GOOGLE_WEB_CLIENT_ID:-}"
+
+if [ -z "$CAPSULE_AES_KEY" ]; then
+    echo "ОШИБКА: Переменная CAPSULE_AES_KEY не задана."
+    echo "Создайте .env из .env.example и сгенерируйте ключ командой: ./generate-aes-key.sh"
+    exit 1
+fi
 
 echo "========================================================"
 echo " Запуск автономного сервера «Time Capsule 2.0»"
 echo "========================================================"
 echo " Порт:        $PORT"
-echo " Режим Демо:  $DEMO_MODE"
 echo " Java:        $("$JAVA_HOME/bin/java" -version 2>&1 | head -n 1)"
 echo "========================================================"
 

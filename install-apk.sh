@@ -26,8 +26,13 @@ fi
 if [ ! -f "$APK" ]; then
     echo "Сборка APK..."
     cd "$DIR/android-client"
-    ./gradlew assembleRelease --no-daemon
-    APK="$DIR/android-client/app/build/outputs/apk/release/app-release.apk"
+    if [ -n "${API_BASE_URL:-}" ]; then
+        ./gradlew assembleRelease -PapiBaseUrl="$API_BASE_URL" --no-daemon
+        APK="$DIR/android-client/app/build/outputs/apk/release/app-release.apk"
+    else
+        ./gradlew assembleDebug --no-daemon
+        APK="$DIR/android-client/app/build/outputs/apk/debug/app-debug.apk"
+    fi
 fi
 
 echo "Проверка подключённых устройств..."

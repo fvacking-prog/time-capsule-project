@@ -22,7 +22,6 @@ import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.isNull
-import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
@@ -34,11 +33,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.less
 import org.jetbrains.exposed.sql.deleteWhere
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneOffset
-import java.time.temporal.ChronoUnit
-import java.util.UUID
+import org.slf4j.LoggerFactory
+import kotlin.system.exitProcess
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier
+import com.google.api.client.http.javanet.NetHttpTransport
+import com.google.api.client.json.gson.GsonFactory
 
 class CapsuleNotFoundException(message: String) : RuntimeException(message)
 class ParticipantNotFoundException(message: String) : RuntimeException(message)
@@ -48,13 +47,31 @@ class ConflictException(message: String) : RuntimeException(message)
 class TooManyRequestsException(message: String) : RuntimeException(message)
 
 fun main() {
+    try {
+        CryptoUtils.validateCryptoConfig()
+    } catch (e: Throwable) {
+        System.err.println(e.message ?: "КРИТИЧЕСКАЯ ОШИБКА: Неверная конфигурация CAPSULE_AES_KEY.")
+        exitProcess(1)
+    }
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
     embeddedServer(Netty, port = port, host = "0.0.0.0", module = Application::module)
         .start(wait = true)
 }
 
 fun Application.module() {
+    val logger = LoggerFactory.getLogger("Application")
     CryptoUtils.validateCryptoConfig()
+
+    // Проверка доступности классов GoogleIdTokenVerifier при старте
+    try {
+        GoogleIdTokenVerifier.Builder(
+            NetHttpTransport(),
+            GsonFactory.getDefaultInstance()
+        ).build()
+        logger.info("GoogleIdTokenVerifier classes verified successfully.")
+    } catch (t: Throwable) {
+        logger.warn("GoogleIdTokenVerifier init check note: ${t.message}")
+    }
 
     val dataDir = java.io.File("./data")
     if (!dataDir.exists()) {
@@ -67,7 +84,30 @@ fun Application.module() {
         driver = "org.h2.Driver"
     )
 
-    migrateAndSeedDatabase()
+    // JVM Shutdown hook для корректного освобождения блокировки файла БД
+    Runtime.getRuntime().addShutdownHook(Thread {
+        try {
+            transaction {
+                exec("SHUTDOWN") {}
+            }
+        } catch (_: Throwable) {}
+    })
+
+    try {
+        migrateDatabase()
+    } catch (e: Exception) {
+        val rootCause = generateSequence(e as Throwable) { it.cause }.lastOrNull() ?: e
+        val msg = "${e.message} ${rootCause.message}"
+        if (msg.contains("Database may be already in use") || msg.contains("90020") || msg.contains("file is locked") || msg.contains("База данных уже используется")) {
+            System.err.println("================================================================================")
+            System.err.println("ОШИБКА: База данных ./data/timecapsule заблокирована другим процессом.")
+            System.err.println("Возможно, сервер Time Capsule уже запущен (проверьте lsof ./data/timecapsule.mv.db).")
+            System.err.println("Завершите старый процесс перед повторным запуском.")
+            System.err.println("================================================================================")
+            throw IllegalStateException("База данных ./data/timecapsule заблокирована другим процессом. Завершите старый процесс.", e)
+        }
+        throw e
+    }
 
     // Фоновая периодическая очистка просроченных сессий раз в 60 секунд
     launch(Dispatchers.IO) {
@@ -153,6 +193,7 @@ fun Application.module() {
             )
         }
         exception<TooManyRequestsException> { call, cause ->
+            call.response.headers.append(HttpHeaders.RetryAfter, "60")
             call.respondText(
                 text = cause.message ?: "Too many requests",
                 status = HttpStatusCode.TooManyRequests
@@ -195,7 +236,7 @@ fun Application.module() {
     }
 }
 
-fun migrateAndSeedDatabase() {
+fun migrateDatabase() {
     transaction {
         SchemaUtils.createMissingTablesAndColumns(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions)
 
@@ -210,82 +251,6 @@ fun migrateAndSeedDatabase() {
             val newCode = generateUniqueInviteCode()
             Capsules.update({ Capsules.id eq cid }) {
                 it[inviteCode] = newCode
-            }
-        }
-    }
-
-    seedDemoData()
-}
-
-fun seedDemoData() {
-    transaction {
-        if (Users.selectAll().count() > 0L || Capsules.selectAll().count() > 0L) return@transaction
-
-        Users.insert {
-            it[id] = "user_maga"
-            it[username] = "Maga"
-            it[displayName] = "Maga"
-            it[email] = "maga@demo.local"
-            it[googleSub] = null
-            it[photoUrl] = null
-        }
-        Users.insert {
-            it[id] = "user_zainab"
-            it[username] = "Zainab"
-            it[displayName] = "Zainab"
-            it[email] = "zainab@demo.local"
-            it[googleSub] = null
-            it[photoUrl] = null
-        }
-
-        val now = System.currentTimeMillis()
-        val capsuleId = UUID.randomUUID().toString()
-
-        Capsules.insert {
-            it[id] = capsuleId
-            it[creatorId] = "user_maga"
-            it[title] = "Капсула Худжанд"
-            it[latitude] = 40.2825
-            it[longitude] = 69.6221
-            it[radiusMeters] = 50.0
-            it[createdAt] = now
-            it[isGroupCapsule] = true
-            it[inviteCode] = "KHJ001"
-            it[kind] = "MESSAGE"
-            it[recipient] = "Жителям Худжанда"
-            it[tags] = "худжанд,история,будущее"
-            it[isGeoLocked] = true
-        }
-
-        listOf("user_maga", "user_zainab").forEach { participantId ->
-            CapsuleParticipants.insert {
-                it[CapsuleParticipants.capsuleId] = capsuleId
-                it[userId] = participantId
-                it[lastLat] = null
-                it[lastLon] = null
-                it[lastSeenAt] = null
-                it[openedAt] = null
-                it[archived] = false
-            }
-        }
-
-        val stage1Unlock = Instant.ofEpochMilli(now).minus(1, ChronoUnit.HOURS).toEpochMilli()
-        val stage2Unlock = LocalDate.of(2027, 11, 16).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-        val stage3Unlock = LocalDate.of(2030, 11, 16).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-
-        val demoStages = listOf(
-            Triple(1, stage1Unlock, "Этап 1: Привет из Худжанда! Первый этап капсулы времени успешно открыт."),
-            Triple(2, stage2Unlock, "Этап 2: 16 ноября 2027 — проверяем наши цели спустя год!"),
-            Triple(3, stage3Unlock, "Этап 3: 16 ноября 2030 — финальное послание в будущее!")
-        )
-
-        demoStages.forEach { (number, unlockMillis, plainText) ->
-            CapsuleStages.insert {
-                it[id] = UUID.randomUUID().toString()
-                it[CapsuleStages.capsuleId] = capsuleId
-                it[stageNumber] = number
-                it[unlockDate] = unlockMillis
-                it[encryptedText] = CryptoUtils.encrypt(plainText)
             }
         }
     }

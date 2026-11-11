@@ -7,13 +7,15 @@ import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.cyberpunk.BuildConfig
 import com.example.cyberpunk.R
 import com.example.cyberpunk.data.ApiConfig
 import com.example.cyberpunk.data.CapsuleRepository
+import com.example.cyberpunk.data.GeoHelper
 import com.example.cyberpunk.data.LocationProvider
-import com.example.cyberpunk.data.MockCapsuleRepository
 import com.example.cyberpunk.data.RemoteCapsuleRepository
 import com.example.cyberpunk.data.SessionExpiredException
+import com.example.cyberpunk.data.UnlockDateTimeHelper
 import com.example.cyberpunk.data.UserPreferences
 import com.timecapsule.shared.CapsuleDto
 import com.timecapsule.shared.CheckInRequest
@@ -21,6 +23,7 @@ import com.timecapsule.shared.CreateCapsuleRequest
 import com.timecapsule.shared.CreateStageRequest
 import com.timecapsule.shared.UserDto
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -37,8 +40,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import java.time.LocalDate
-import java.time.ZoneOffset
 
 private val exportJson = Json { prettyPrint = true }
 
@@ -53,19 +54,17 @@ data class CreateCapsuleFormState(
     val recipient: String = "",
     val tags: String = "",
     val messageText: String = "",
-    val unlockDateMillis: Long = LocalDate.now().plusDays(7)
-        .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+    val unlockDateMillis: Long = UnlockDateTimeHelper.defaultUnlockMillis(daysAhead = 7),
     val selectedDateChip: String = "WEEK",
     val isGeoLocked: Boolean = false,
     val latitude: Double? = null,
     val longitude: Double? = null,
     val radiusMeters: Float = 50f,
     val participantSearchQuery: String = "",
-    val selectedParticipantIds: Set<String> = setOf("user_maga", "user_zainab"),
+    val selectedParticipantIds: Set<String> = emptySet(),
     val stages: List<DraftStageItem> = listOf(
         DraftStageItem(
-            unlockDateMillis = LocalDate.now().plusDays(7)
-                .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+            unlockDateMillis = UnlockDateTimeHelper.defaultUnlockMillis(daysAhead = 7),
             secretText = ""
         )
     ),
@@ -78,10 +77,7 @@ data class CapsuleUiState(
     val isAuthenticated: Boolean = false,
     val isAuthenticating: Boolean = false,
     val currentUser: UserDto? = null,
-    val availableUsers: List<UserDto> = listOf(
-        UserDto(id = "user_maga", username = "Maga", email = "m***a@demo.local"),
-        UserDto(id = "user_zainab", username = "Zainab", email = "z***b@demo.local")
-    ),
+    val availableUsers: List<UserDto> = emptyList(),
     val isLoading: Boolean = true,
     val isSyncing: Boolean = false,
     val capsules: List<CapsuleDto> = emptyList(),
@@ -95,8 +91,6 @@ data class CapsuleUiState(
     val isCheckingHealth: Boolean = false,
     val healthResultText: String? = null,
     val healthResultSuccess: Boolean? = null,
-    val isDemoMode: Boolean = false,
-    val isDemoForceActive: Boolean = false,
     val hasLocationPermission: Boolean = false,
     val deviceLat: Double? = null,
     val deviceLon: Double? = null,
@@ -129,7 +123,7 @@ data class CapsuleUiState(
             }
             if (deviceLat == null || deviceLon == null) return filtered
             return filtered.sortedBy { c ->
-                MockCapsuleRepository.haversineMeters(deviceLat, deviceLon, c.latitude, c.longitude)
+                GeoHelper.haversineMeters(deviceLat, deviceLon, c.latitude, c.longitude)
             }
         }
 
@@ -148,17 +142,19 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
     private val locationProvider = LocationProvider(appContext)
 
     private val remoteRepository: CapsuleRepository = RemoteCapsuleRepository()
-    private val mockRepository: CapsuleRepository = MockCapsuleRepository(
-        defaultTitle = appContext.getString(R.string.mock_capsule_khujand_title),
-        stage1PlainText = appContext.getString(R.string.mock_stage_1_decrypted),
-        lockedPlaceholder = appContext.getString(R.string.locked_stage_placeholder)
-    )
 
     private val _uiState = MutableStateFlow(CapsuleUiState())
     val uiState: StateFlow<CapsuleUiState> = _uiState.asStateFlow()
 
     private val _snackbarEvents = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val snackbarEvents: SharedFlow<String> = _snackbarEvents.asSharedFlow()
+
+    private val coroutineExceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        if (throwable !is CancellationException) {
+            val msg = throwable.localizedMessage ?: throwable.message ?: appContext.getString(R.string.error_generic)
+            _snackbarEvents.tryEmit(msg)
+        }
+    }
 
     private var userSearchJob: Job? = null
 
@@ -273,44 +269,6 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         _snackbarEvents.tryEmit(message)
     }
 
-    fun signInWithDemo(userId: String) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isAuthenticating = true) }
-            try {
-                val authResponse = try {
-                    remoteRepository.authDemo(userId)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    _snackbarEvents.tryEmit(appContext.getString(R.string.auth_demo_offline_notice, userId))
-                    mockRepository.authDemo(userId)
-                }
-
-                ApiConfig.saveSession(appContext, authResponse.user, authResponse.sessionToken)
-
-                _uiState.update { state ->
-                    state.copy(
-                        isAuthenticated = true,
-                        currentUser = authResponse.user,
-                        availableUsers = mergeUsers(state.availableUsers, listOf(authResponse.user)),
-                        createForm = state.createForm.copy(
-                            selectedParticipantIds = state.createForm.selectedParticipantIds + authResponse.user.id
-                        )
-                    )
-                }
-                loadCapsules()
-                refreshUsersList("")
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                val reason = e.localizedMessage ?: e.javaClass.simpleName
-                _snackbarEvents.tryEmit(appContext.getString(R.string.auth_error_generic, reason))
-            } finally {
-                _uiState.update { it.copy(isAuthenticating = false) }
-            }
-        }
-    }
-
     fun logout() {
         val credentialManager = CredentialManager.create(appContext)
         viewModelScope.launch {
@@ -342,19 +300,14 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         userSearchJob?.cancel()
         userSearchJob = viewModelScope.launch {
             try {
-                val remoteUsers = try {
-                    remoteRepository.searchUsers(query)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: SessionExpiredException) {
-                    handleUnauthorized()
-                    return@launch
-                } catch (_: Exception) {
-                    mockRepository.searchUsers(query)
-                }
+                val remoteUsers = remoteRepository.searchUsers(query)
                 _uiState.update { state ->
                     state.copy(availableUsers = mergeUsers(state.availableUsers, remoteUsers))
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: SessionExpiredException) {
+                handleUnauthorized()
             } catch (_: Exception) {
             }
         }
@@ -368,7 +321,7 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun toggleParticipantSelection(userId: String) {
-        val currentCreatorId = _uiState.value.currentUserId ?: "user_maga"
+        val currentCreatorId = _uiState.value.currentUserId ?: return
         if (userId == currentCreatorId) return
 
         _uiState.update { state ->
@@ -401,18 +354,7 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             _uiState.update { it.copy(isJoiningCapsule = true) }
             try {
-                val joined = try {
-                    remoteRepository.joinCapsule(code)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: SessionExpiredException) {
-                    handleUnauthorized()
-                    return@launch
-                } catch (e: Exception) {
-                    val reason = e.localizedMessage ?: e.javaClass.simpleName
-                    _snackbarEvents.tryEmit(appContext.getString(R.string.network_error_snackbar, reason))
-                    mockRepository.joinCapsule(code)
-                }
+                val joined = remoteRepository.joinCapsule(code)
 
                 _uiState.update { state ->
                     val existing = state.capsules.filterNot { it.id == joined.id }
@@ -425,6 +367,10 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
                 }
                 _snackbarEvents.tryEmit(appContext.getString(R.string.join_success_msg, joined.title))
                 onJoined()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: SessionExpiredException) {
+                handleUnauthorized()
             } catch (e: Exception) {
                 _snackbarEvents.tryEmit(e.localizedMessage ?: "Ошибка присоединения к капсуле")
             } finally {
@@ -449,12 +395,8 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(showProfileDialog = false) }
     }
 
-    fun selectProfile(userId: String) {
-        signInWithDemo(userId)
-        dismissProfileDialog()
-    }
-
     fun openSettingsDialog() {
+        if (!BuildConfig.DEBUG) return
         _uiState.update {
             it.copy(
                 showSettingsDialog = true,
@@ -476,18 +418,25 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun updateSettingsUrlInput(url: String) {
+        if (!BuildConfig.DEBUG) return
         _uiState.update { it.copy(settingsUrlInput = url) }
     }
 
     fun saveServerUrl() {
+        if (!BuildConfig.DEBUG) return
         val newUrl = _uiState.value.settingsUrlInput.trim().ifEmpty { ApiConfig.BASE_URL }
+        if (!ApiConfig.isValidServerUrl(newUrl, allowCleartext = true)) {
+            _snackbarEvents.tryEmit(appContext.getString(R.string.server_url_invalid))
+            return
+        }
         ApiConfig.saveBaseUrl(appContext, newUrl)
-        _uiState.update { it.copy(showSettingsDialog = false) }
-        _snackbarEvents.tryEmit(appContext.getString(R.string.server_url_saved, newUrl))
+        _uiState.update { it.copy(showSettingsDialog = false, settingsUrlInput = ApiConfig.BASE_URL) }
+        _snackbarEvents.tryEmit(appContext.getString(R.string.server_url_saved, ApiConfig.BASE_URL))
         loadCapsules()
     }
 
     fun checkServerHealth() {
+        if (!BuildConfig.DEBUG) return
         val target = _uiState.value.settingsUrlInput.trim().ifEmpty { ApiConfig.BASE_URL }
         viewModelScope.launch {
             _uiState.update {
@@ -528,15 +477,6 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun setDemoMode(enabled: Boolean) {
-        _uiState.update {
-            it.copy(
-                isDemoMode = enabled,
-                isDemoForceActive = if (!enabled) false else it.isDemoForceActive
-            )
-        }
-    }
-
     fun updateLocationPermission(granted: Boolean) {
         _uiState.update { it.copy(hasLocationPermission = granted) }
     }
@@ -552,18 +492,7 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
             val previousCapsules = _uiState.value.capsules
 
             try {
-                val loaded = try {
-                    remoteRepository.getCapsules()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: SessionExpiredException) {
-                    handleUnauthorized()
-                    return@launch
-                } catch (e: Exception) {
-                    val reason = e.localizedMessage ?: e.javaClass.simpleName
-                    _snackbarEvents.tryEmit(appContext.getString(R.string.network_error_fallback_mock, reason))
-                    mockRepository.getCapsules()
-                }
+                val loaded = remoteRepository.getCapsules()
 
                 _uiState.update { current ->
                     current.copy(
@@ -581,6 +510,10 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
                         _snackbarEvents.tryEmit(appContext.getString(R.string.capsule_just_unlocked_snackbar, fresh.title))
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: SessionExpiredException) {
+                handleUnauthorized()
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
@@ -601,54 +534,25 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
             }
             val lat = coords?.latitude ?: _uiState.value.deviceLat ?: return@launch
             val lon = coords?.longitude ?: _uiState.value.deviceLon ?: return@launch
+            val currentUid = _uiState.value.currentUserId ?: return@launch
 
             _uiState.update { it.copy(isSyncing = true) }
             try {
-                val currentUid = _uiState.value.currentUserId ?: "user_maga"
-                val updated = try {
-                    remoteRepository.checkIn(capsuleId, CheckInRequest(userId = currentUid, lat = lat, lon = lon))
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: SessionExpiredException) {
-                    handleUnauthorized()
-                    return@launch
-                } catch (_: Exception) {
-                    mockRepository.checkIn(capsuleId, CheckInRequest(userId = currentUid, lat = lat, lon = lon))
-                }
+                val updated = remoteRepository.checkIn(
+                    capsuleId,
+                    CheckInRequest(userId = currentUid, lat = lat, lon = lon)
+                )
                 updateCapsuleInState(updated)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: SessionExpiredException) {
+                handleUnauthorized()
+            } catch (_: Exception) {
+                // Игнорируем единичный сбой периодического чекина
             } finally {
                 _uiState.update { it.copy(isSyncing = false) }
             }
         }
-    }
-
-    fun performDemoForceCheckInTick(capsuleId: String, notifyUser: Boolean = false) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isSyncing = true) }
-            try {
-                val updated = try {
-                    remoteRepository.demoForceCheckIn(capsuleId)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: SessionExpiredException) {
-                    handleUnauthorized()
-                    return@launch
-                } catch (_: Exception) {
-                    mockRepository.demoForceCheckIn(capsuleId)
-                }
-                updateCapsuleInState(updated)
-                if (notifyUser) {
-                    _snackbarEvents.tryEmit(appContext.getString(R.string.demo_force_checkin_done))
-                }
-            } finally {
-                _uiState.update { it.copy(isSyncing = false) }
-            }
-        }
-    }
-
-    fun onDemoForceCheckInClicked(capsuleId: String) {
-        _uiState.update { it.copy(isDemoForceActive = true) }
-        performDemoForceCheckInTick(capsuleId, notifyUser = true)
     }
 
     private fun updateCapsuleInState(updated: CapsuleDto) {
@@ -693,19 +597,14 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
     fun openCapsule(capsuleId: String, onOpened: () -> Unit = {}) {
         viewModelScope.launch {
             try {
-                val updated = try {
-                    remoteRepository.openCapsule(capsuleId)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: SessionExpiredException) {
-                    handleUnauthorized()
-                    return@launch
-                } catch (e: Exception) {
-                    mockRepository.openCapsule(capsuleId)
-                }
+                val updated = remoteRepository.openCapsule(capsuleId)
                 updateCapsuleInState(updated)
                 _snackbarEvents.tryEmit(appContext.getString(R.string.capsule_opened_success, updated.title))
                 onOpened()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: SessionExpiredException) {
+                handleUnauthorized()
             } catch (e: Exception) {
                 _snackbarEvents.tryEmit(e.localizedMessage ?: "Ошибка открытия капсулы")
             }
@@ -715,18 +614,13 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
     fun archiveCapsule(capsuleId: String) {
         viewModelScope.launch {
             try {
-                val updated = try {
-                    remoteRepository.archiveCapsule(capsuleId)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: SessionExpiredException) {
-                    handleUnauthorized()
-                    return@launch
-                } catch (e: Exception) {
-                    mockRepository.archiveCapsule(capsuleId)
-                }
+                val updated = remoteRepository.archiveCapsule(capsuleId)
                 updateCapsuleInState(updated)
                 _snackbarEvents.tryEmit(appContext.getString(R.string.capsule_archived_success, updated.title))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: SessionExpiredException) {
+                handleUnauthorized()
             } catch (e: Exception) {
                 _snackbarEvents.tryEmit(e.localizedMessage ?: "Ошибка архивации")
             }
@@ -736,18 +630,13 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
     fun unarchiveCapsule(capsuleId: String) {
         viewModelScope.launch {
             try {
-                val updated = try {
-                    remoteRepository.unarchiveCapsule(capsuleId)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: SessionExpiredException) {
-                    handleUnauthorized()
-                    return@launch
-                } catch (e: Exception) {
-                    mockRepository.unarchiveCapsule(capsuleId)
-                }
+                val updated = remoteRepository.unarchiveCapsule(capsuleId)
                 updateCapsuleInState(updated)
                 _snackbarEvents.tryEmit(appContext.getString(R.string.capsule_unarchived_success, updated.title))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: SessionExpiredException) {
+                handleUnauthorized()
             } catch (e: Exception) {
                 _snackbarEvents.tryEmit(e.localizedMessage ?: "Ошибка разархивации")
             }
@@ -793,14 +682,10 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun setCreateDateChip(chipKey: String) {
-        val now = LocalDate.now()
-        val targetMillis = when (chipKey) {
-            "TOMORROW" -> now.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-            "WEEK" -> now.plusDays(7).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-            "MONTH" -> now.plusMonths(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-            "DEMO_1MIN" -> System.currentTimeMillis() + 65_000L
-            else -> _uiState.value.createForm.unlockDateMillis
-        }
+        val targetMillis = UnlockDateTimeHelper.chipDateMillis(
+            chipKey = chipKey,
+            existingMillis = _uiState.value.createForm.unlockDateMillis
+        )
         _uiState.update { state ->
             val updatedStages = state.createForm.stages.mapIndexed { idx, st ->
                 if (idx == 0) st.copy(unlockDateMillis = targetMillis) else st
@@ -815,23 +700,49 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun setCreateCustomDate(dateMillis: Long) {
+    fun setCreateCustomDate(utcDateMillis: Long) {
         _uiState.update { state ->
+            val merged = UnlockDateTimeHelper.mergePickedUtcDateWithExistingTime(
+                utcDateMillis = utcDateMillis,
+                existingMillis = state.createForm.unlockDateMillis
+            )
             val updatedStages = state.createForm.stages.mapIndexed { idx, st ->
-                if (idx == 0) st.copy(unlockDateMillis = dateMillis) else st
+                if (idx == 0) st.copy(unlockDateMillis = merged) else st
             }
             state.copy(
                 createForm = state.createForm.copy(
                     selectedDateChip = "CUSTOM",
-                    unlockDateMillis = dateMillis,
+                    unlockDateMillis = merged,
                     stages = updatedStages
                 )
             )
         }
     }
 
+    fun setCreateCustomTime(hour: Int, minute: Int): Boolean {
+        val currentMillis = _uiState.value.createForm.unlockDateMillis
+        val candidateMillis = UnlockDateTimeHelper.applyTimeOfDay(currentMillis, hour, minute)
+        if (!UnlockDateTimeHelper.validateMinimumLead(candidateMillis)) {
+            _snackbarEvents.tryEmit(appContext.getString(R.string.validation_unlock_min_1min))
+            return false
+        }
+        _uiState.update { state ->
+            val updatedStages = state.createForm.stages.mapIndexed { idx, st ->
+                if (idx == 0) st.copy(unlockDateMillis = candidateMillis) else st
+            }
+            state.copy(
+                createForm = state.createForm.copy(
+                    selectedDateChip = "CUSTOM",
+                    unlockDateMillis = candidateMillis,
+                    stages = updatedStages
+                )
+            )
+        }
+        return true
+    }
+
     fun applyTemplate(title: String, prompt: String, tags: List<String>, daysAhead: Long, onNavigateToCreate: () -> Unit) {
-        val dateMillis = LocalDate.now().plusDays(daysAhead).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        val dateMillis = UnlockDateTimeHelper.defaultUnlockMillis(daysAhead = daysAhead)
         _uiState.update { state ->
             state.copy(
                 createForm = state.createForm.copy(
@@ -857,6 +768,10 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         }
         if (form.isGeoLocked && (form.latitude == null || form.longitude == null)) {
             _snackbarEvents.tryEmit(appContext.getString(R.string.validation_create_error))
+            return
+        }
+        if (!UnlockDateTimeHelper.validateMinimumLead(form.unlockDateMillis)) {
+            _snackbarEvents.tryEmit(appContext.getString(R.string.validation_unlock_min_1min))
             return
         }
         _uiState.update { it.copy(showConfirmSealDialog = true) }
@@ -900,8 +815,9 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
 
     fun addCreateStage() {
         _uiState.update { state ->
-            val nextDate = LocalDate.now().plusMonths(state.createForm.stages.size.toLong() + 1)
-                .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+            val nextDate = UnlockDateTimeHelper.defaultUnlockMillis(
+                daysAhead = 30L * (state.createForm.stages.size.toLong() + 1L)
+            )
             val list = state.createForm.stages + DraftStageItem(unlockDateMillis = nextDate, secretText = "")
             state.copy(createForm = state.createForm.copy(stages = list))
         }
@@ -915,13 +831,37 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun updateCreateStageDate(index: Int, millis: Long) {
+    fun updateCreateStageDate(index: Int, utcDateMillis: Long) {
         _uiState.update { state ->
             val updated = state.createForm.stages.mapIndexed { i, item ->
-                if (i == index) item.copy(unlockDateMillis = millis) else item
+                if (i == index) {
+                    val merged = UnlockDateTimeHelper.mergePickedUtcDateWithExistingTime(
+                        utcDateMillis = utcDateMillis,
+                        existingMillis = item.unlockDateMillis
+                    )
+                    item.copy(unlockDateMillis = merged)
+                } else {
+                    item
+                }
             }
             state.copy(createForm = state.createForm.copy(stages = updated))
         }
+    }
+
+    fun updateCreateStageTime(index: Int, hour: Int, minute: Int): Boolean {
+        val targetItem = _uiState.value.createForm.stages.getOrNull(index) ?: return false
+        val candidateMillis = UnlockDateTimeHelper.applyTimeOfDay(targetItem.unlockDateMillis, hour, minute)
+        if (!UnlockDateTimeHelper.validateMinimumLead(candidateMillis)) {
+            _snackbarEvents.tryEmit(appContext.getString(R.string.validation_unlock_min_1min))
+            return false
+        }
+        _uiState.update { state ->
+            val updated = state.createForm.stages.mapIndexed { i, item ->
+                if (i == index) item.copy(unlockDateMillis = candidateMillis) else item
+            }
+            state.copy(createForm = state.createForm.copy(stages = updated))
+        }
+        return true
     }
 
     fun updateCreateStageSecret(index: Int, text: String) {
@@ -939,7 +879,10 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         val form = state.createForm
         if (form.isSubmitting) return
         dismissConfirmSealDialog()
-        val creatorId = state.currentUserId ?: "user_maga"
+        val creatorId = state.currentUserId ?: run {
+            _snackbarEvents.tryEmit(appContext.getString(R.string.auth_error_invalid_token))
+            return
+        }
         val message = form.messageText.ifBlank { form.stages.firstOrNull()?.secretText.orEmpty() }
 
         if (form.title.isBlank() || message.isBlank()) {
@@ -953,6 +896,11 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
             }
         } else {
             listOf(DraftStageItem(form.unlockDateMillis, message))
+        }
+
+        if (stages.any { !UnlockDateTimeHelper.validateMinimumLead(it.unlockDateMillis) }) {
+            _snackbarEvents.tryEmit(appContext.getString(R.string.validation_unlock_min_1min))
+            return
         }
 
         val cleanTags = form.tags.split(",")
@@ -990,30 +938,25 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             _uiState.update { it.copy(createForm = it.createForm.copy(isSubmitting = true)) }
             try {
-                val created = try {
-                    remoteRepository.createCapsule(request)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: SessionExpiredException) {
-                    handleUnauthorized()
-                    return@launch
-                } catch (e: Exception) {
-                    val reason = e.localizedMessage ?: e.javaClass.simpleName
-                    _snackbarEvents.tryEmit(appContext.getString(R.string.network_error_snackbar, reason))
-                    mockRepository.createCapsule(request)
-                }
+                val created = remoteRepository.createCapsule(request)
 
                 _uiState.update { current ->
                     current.copy(
                         capsules = current.capsules + created,
                         selectedCapsuleId = created.id,
                         createForm = CreateCapsuleFormState(
-                            selectedParticipantIds = setOf("user_maga", "user_zainab") + creatorId
+                            selectedParticipantIds = setOf(creatorId)
                         )
                     )
                 }
                 _snackbarEvents.tryEmit(appContext.getString(R.string.create_capsule_success, created.title))
                 onCreated()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: SessionExpiredException) {
+                handleUnauthorized()
+            } catch (e: Exception) {
+                _snackbarEvents.tryEmit(e.localizedMessage ?: "Ошибка создания капсулы")
             } finally {
                 _uiState.update { it.copy(createForm = it.createForm.copy(isSubmitting = false)) }
             }
@@ -1063,7 +1006,18 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun forgotPin() {
-        logout()
+        viewModelScope.launch(coroutineExceptionHandler) {
+            UserPreferences.clearPin(appContext)
+            logout()
+            _uiState.update { it.copy(isPinSet = false, isPinUnlocked = true, pinError = null) }
+            _snackbarEvents.tryEmit(appContext.getString(R.string.pin_reset_success))
+        }
+    }
+
+    fun onAppForegrounded() {
+        if (_uiState.value.isPinSet) {
+            _uiState.update { it.copy(isPinUnlocked = false) }
+        }
     }
 
     fun toggleNotifications(enabled: Boolean) {
@@ -1145,13 +1099,7 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             _uiState.update { it.copy(isDeletingData = true) }
             try {
-                try {
-                    remoteRepository.deleteMyData()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    mockRepository.deleteMyData()
-                }
+                remoteRepository.deleteMyData()
                 UserPreferences.clearPin(appContext)
                 ApiConfig.clearSession(appContext)
                 _uiState.update { state ->
@@ -1166,6 +1114,11 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
                     )
                 }
                 _snackbarEvents.tryEmit(appContext.getString(R.string.data_deleted_success))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: SessionExpiredException) {
+                _uiState.update { it.copy(isDeletingData = false) }
+                handleUnauthorized()
             } catch (e: Exception) {
                 _uiState.update { it.copy(isDeletingData = false) }
                 _snackbarEvents.tryEmit(e.localizedMessage ?: "Ошибка удаления данных")

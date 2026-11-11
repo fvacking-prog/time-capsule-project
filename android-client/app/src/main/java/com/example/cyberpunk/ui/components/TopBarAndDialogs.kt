@@ -1,13 +1,13 @@
 package com.example.cyberpunk.ui.components
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -15,7 +15,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -33,8 +32,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -49,6 +46,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.example.cyberpunk.BuildConfig
 import com.example.cyberpunk.R
 import com.example.cyberpunk.ui.theme.TokyoAccent
 import com.example.cyberpunk.ui.theme.TokyoBackground
@@ -66,9 +64,7 @@ import com.timecapsule.shared.UserDto
 fun TimeCapsuleTopBar(
     currentUsername: String,
     currentPhotoUrl: String?,
-    isDemoMode: Boolean,
     onProfileClick: () -> Unit,
-    onDemoModeChange: (Boolean) -> Unit,
     onSettingsClick: () -> Unit
 ) {
     TopAppBar(
@@ -126,37 +122,14 @@ fun TimeCapsuleTopBar(
                 )
             )
 
-            Spacer(modifier = Modifier.width(6.dp))
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 4.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.demo_mode_label),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isDemoMode) TokyoSuccess else TokyoOnSurface
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Switch(
-                    checked = isDemoMode,
-                    onCheckedChange = onDemoModeChange,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = TokyoBackground,
-                        checkedTrackColor = TokyoSuccess,
-                        uncheckedThumbColor = TokyoOnSurface,
-                        uncheckedTrackColor = TokyoBackground
+            if (BuildConfig.DEBUG) {
+                IconButton(onClick = onSettingsClick) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = stringResource(R.string.settings_content_desc),
+                        tint = TokyoPrimary
                     )
-                )
-            }
-
-            IconButton(onClick = onSettingsClick) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = stringResource(R.string.settings_content_desc),
-                    tint = TokyoPrimary
-                )
+                }
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
@@ -169,7 +142,6 @@ fun TimeCapsuleTopBar(
 @Composable
 fun ProfileSelectionDialog(
     currentUser: UserDto?,
-    onSelectDemoUser: (String) -> Unit,
     onLogout: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -185,7 +157,10 @@ fun ProfileSelectionDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier.imePadding(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 if (currentUser != null) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -243,29 +218,6 @@ fun ProfileSelectionDialog(
 
                 HorizontalDivider(color = TokyoOnSurface.copy(alpha = 0.2f))
 
-                Text(
-                    text = stringResource(R.string.profile_switch_demo_title),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = TokyoOnSurface
-                )
-
-                ProfileOptionCard(
-                    name = stringResource(R.string.user_maga_name),
-                    description = stringResource(R.string.user_maga_desc),
-                    isSelected = currentUser?.id == stringResource(R.string.user_maga_id),
-                    accentColor = TokyoPrimary,
-                    onClick = { onSelectDemoUser("user_maga") }
-                )
-                ProfileOptionCard(
-                    name = stringResource(R.string.user_zainab_name),
-                    description = stringResource(R.string.user_zainab_desc),
-                    isSelected = currentUser?.id == stringResource(R.string.user_zainab_id),
-                    accentColor = TokyoSecondary,
-                    onClick = { onSelectDemoUser("user_zainab") }
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
                 Button(
                     onClick = onLogout,
                     modifier = Modifier.fillMaxWidth(),
@@ -300,67 +252,6 @@ fun ProfileSelectionDialog(
 }
 
 @Composable
-private fun ProfileOptionCard(
-    name: String,
-    description: String,
-    isSelected: Boolean,
-    accentColor: androidx.compose.ui.graphics.Color,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = TokyoBackground
-        ),
-        border = BorderStroke(
-            width = if (isSelected) 2.dp else 1.dp,
-            color = if (isSelected) TokyoSuccess else accentColor.copy(alpha = 0.5f)
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Person,
-                    contentDescription = null,
-                    tint = accentColor,
-                    modifier = Modifier.size(28.dp)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = name,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = TokyoOnBackground
-                    )
-                    Text(
-                        text = description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TokyoOnSurface
-                    )
-                }
-            }
-            if (isSelected) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = null,
-                    tint = TokyoSuccess
-                )
-            }
-        }
-    }
-}
-
-@Composable
 fun ServerSettingsDialog(
     urlInput: String,
     isChecking: Boolean,
@@ -382,7 +273,10 @@ fun ServerSettingsDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier.imePadding(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 OutlinedTextField(
                     value = urlInput,
                     onValueChange = onUrlChange,
@@ -472,7 +366,10 @@ fun JoinCapsuleDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.imePadding(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 Text(
                     text = stringResource(R.string.dialog_join_subtitle),
                     style = MaterialTheme.typography.bodySmall,

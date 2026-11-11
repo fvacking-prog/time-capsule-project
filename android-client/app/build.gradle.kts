@@ -1,3 +1,4 @@
+import java.net.URI
 import java.util.Properties
 
 plugins {
@@ -19,6 +20,43 @@ val googleWebClientId: String = (
         ?: ""
 ).trim()
 
+val rawApiBaseUrlProp: String = (project.findProperty("apiBaseUrl") as? String)
+    ?.trim()
+    ?.trimEnd('/')
+    ?: ""
+
+val apiBaseUrlProp: String = rawApiBaseUrlProp.replace(
+    Regex("^https://", RegexOption.IGNORE_CASE),
+    "https://"
+)
+
+val debugApiBaseUrl: String = apiBaseUrlProp.ifBlank { "http://10.0.2.2:8080" }
+
+fun escapeBuildConfigString(value: String): String =
+    value.replace("\\", "\\\\").replace("\"", "\\\"")
+
+fun validateReleaseApiBaseUrl(url: String) {
+    if (url.isBlank()) {
+        throw GradleException(
+            "ОШИБКА РЕЛИЗНОЙ СБОРКИ: Параметр -PapiBaseUrl не задан. " +
+                "Укажите HTTPS-адрес сервера, например: ./gradlew assembleRelease -PapiBaseUrl=https://api.example.com"
+        )
+    }
+    if (url.any { it.isWhitespace() }) {
+        throw GradleException("ОШИБКА РЕЛИЗНОЙ СБОРКИ: -PapiBaseUrl содержит недопустимые пробельные символы: '$url'")
+    }
+    val uri = try {
+        URI(url)
+    } catch (e: Exception) {
+        throw GradleException("ОШИБКА РЕЛИЗНОЙ СБОРКИ: Некорректный URL в -PapiBaseUrl='$url': ${e.message}")
+    }
+    if (!uri.scheme.equals("https", ignoreCase = true) || uri.host.isNullOrBlank()) {
+        throw GradleException(
+            "ОШИБКА РЕЛИЗНОЙ СБОРКИ: -PapiBaseUrl должен использовать https:// и корректный хост (получено '$url')."
+        )
+    }
+}
+
 // Чтение настроек подписи релиза из keystore.properties (если файл существует)
 val keystorePropsCandidates = listOf(
     rootProject.file("keystore.properties"),
@@ -34,15 +72,18 @@ val keystoreProps = Properties().apply {
 
 fun resolveKeystoreFile(rawPath: String?): File? {
     if (rawPath.isNullOrBlank()) return null
-    val direct = File(rawPath)
-    if (direct.exists()) return direct
-    val relRoot = rootProject.file(rawPath)
-    if (relRoot.exists()) return relRoot
-    val relParent = rootProject.file("../$rawPath")
-    if (relParent.exists()) return relParent
-    val relProject = project.file(rawPath)
-    if (relProject.exists()) return relProject
-    return null
+    val rawFile = File(rawPath)
+    if (rawFile.isAbsolute) {
+        return rawFile.takeIf { it.exists() }?.canonicalFile
+    }
+    val candidates = listOfNotNull(
+        keystorePropsFile?.parentFile?.let { File(it, rawPath) },
+        rootProject.file(rawPath),
+        rootProject.file("../$rawPath"),
+        project.file(rawPath),
+        rawFile.absoluteFile
+    )
+    return candidates.firstOrNull { it.exists() }?.canonicalFile
 }
 
 val releaseStoreFile = resolveKeystoreFile(keystoreProps.getProperty("storeFile"))
@@ -57,14 +98,13 @@ android {
 
     defaultConfig {
         applicationId = "com.example.cyberpunk"
-        minSdk = 26
+        minSdk = 28
         targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
 
-        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
-        // Флаг Demo Mode: по умолчанию включён для защиты проекта. Для боевого релиза установите false.
-        buildConfigField("Boolean", "ENABLE_DEMO", "true")
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${escapeBuildConfigString(googleWebClientId)}\"")
+        buildConfigField("String", "API_BASE_URL", "\"${escapeBuildConfigString(apiBaseUrlProp)}\"")
     }
 
     signingConfigs {
@@ -82,6 +122,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            buildConfigField("String", "API_BASE_URL", "\"${escapeBuildConfigString(apiBaseUrlProp)}\"")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -93,8 +134,15 @@ android {
                 println("ВНИМАНИЕ: keystore.properties не найден или releaseStoreFile отсутствует. Сборка release будет неподписанной.")
             }
         }
+        create("staging") {
+            initWith(getByName("release"))
+            isDebuggable = true
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+        }
         debug {
             isMinifyEnabled = false
+            buildConfigField("String", "API_BASE_URL", "\"${escapeBuildConfigString(debugApiBaseUrl)}\"")
         }
     }
 
@@ -154,4 +202,29 @@ dependencies {
 
     testImplementation(kotlin("test"))
     debugImplementation(libs.androidx.ui.tooling)
+}
+
+gradle.taskGraph.whenReady {
+    val buildingReleasePackage = allTasks.any { task ->
+        task.project == project &&
+            task.name.contains("Release") &&
+            (task.name.startsWith("assemble") || task.name.startsWith("bundle") || task.name.startsWith("package"))
+    }
+    if (buildingReleasePackage) {
+        if (googleWebClientId.isBlank()) {
+            throw GradleException("ОШИБКА РЕЛИЗНОЙ СБОРКИ: GOOGLE_WEB_CLIENT_ID не задан в local.properties или переменных окружения. Укажите GOOGLE_WEB_CLIENT_ID=<id> для работы Google-входа в релизной сборке.")
+        }
+        validateReleaseApiBaseUrl(apiBaseUrlProp)
+    }
+}
+
+tasks.matching {
+    it.name.contains("Release") && (it.name.startsWith("assemble") || it.name.startsWith("bundle") || it.name.startsWith("package"))
+}.configureEach {
+    doFirst {
+        if (googleWebClientId.isBlank()) {
+            throw GradleException("ОШИБКА РЕЛИЗНОЙ СБОРКИ: GOOGLE_WEB_CLIENT_ID не задан в local.properties или переменных окружения. Укажите GOOGLE_WEB_CLIENT_ID=<id> для работы Google-входа в релизной сборке.")
+        }
+        validateReleaseApiBaseUrl(apiBaseUrlProp)
+    }
 }

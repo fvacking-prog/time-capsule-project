@@ -1,6 +1,6 @@
 # Time Capsule 2.0
 
-Гео-синхронизированные капсулы времени с поэтапной разблокировкой (`AES-256-GCM`), проверкой совместного присутствия участников (`Haversine` + окно активности 60 секунд) и авторизацией через Google (`Credential Manager API` + `GoogleIdTokenVerifier` + Bearer-сессии).
+Гео-синхронизированные капсулы времени с поэтапной разблокировкой (`AES-256-GCM`), строгим правилом открытия (`now >= unlockDate` и для гео-капсул — присутствие всех участников в радиусе с `lastSeenAt` не старше 60 секунд) и авторизацией через Google (`Credential Manager API` + `GoogleIdTokenVerifier` + Bearer-сессии).
 
 ---
 
@@ -8,32 +8,52 @@
 
 - `backend/` — сервер на Kotlin 2.0.21 + Ktor 3.0.1 (Netty) + Exposed 0.56.0 + H2 в файловом режиме (`jdbc:h2:file:./data/timecapsule;DB_CLOSE_DELAY=-1`). Собирается в автономный Fat JAR (`timecapsule-server.jar`).
 - `android-client/` — Android-клиент на Kotlin 2.0.21 + Jetpack Compose (Material 3, тема Tokyo Night) + Ktor Client 3.0.1 + Credential Manager API + DataStore + Coil. Включает 5 разделов навигации («Главная», «Капсулы», «Создать», «Идеи», «Настройки»), экраны «Радар» и «Таймлайн».
-- `RELEASE.md` — релизное руководство: пути к собранным APK, AAB и Fat JAR, генерация ключей и подпись, пошаговый сценарий защиты проекта.
-- `REPORT.md` — подробный отчёт предрелизного аудита и исправления всех дефектов.
-- `AUDIT.md` — отчёт первоначального QA и аудита безопасности проекта.
-- `CHANGELOG.md` — история версий и изменений проекта (релиз 1.0.0).
+- `RELEASE.md` — релизное руководство: конфигурация `CAPSULE_AES_KEY`, сборка APK/AAB с `-PapiBaseUrl=https://...`, подпись, привязка SHA-1 в Google Cloud Console, диагностика R8 и пошаговый сценарий проверки.
+- `.env.example` — шаблон переменных окружения бэкенда (`PORT`, `H2_URL`, `CAPSULE_AES_KEY`, `GOOGLE_WEB_CLIENT_ID`).
+- `generate-aes-key.sh` — генератор случайного 32-байтного ключа AES-256 в формате Base64 для `CAPSULE_AES_KEY`.
 
 ---
 
 ## Быстрый старт и запуск
 
-1. **Запуск сервера (автономный Fat JAR):**
+1. **Настройка ключа шифрования и запуск сервера (автономный Fat JAR):**
+   `CAPSULE_AES_KEY` обязателен всегда (строго 32 байта в Base64). При его отсутствии или неверной длине сервер завершает старт с ошибкой.
    ```bash
+   cp .env.example .env
+   ./generate-aes-key.sh --env >> .env
    ./start-server.sh
    ```
-   Сервер стартует за 0.9 секунды на `http://0.0.0.0:8080`. Для сброса базы используйте `./reset-data.sh`.
-   Также доступен запуск через Docker: `docker compose up -d --build`.
+   Сервер стартует на `http://0.0.0.0:8080`.
+   Для запуска JAR напрямую с явными переменными окружения:
+   ```bash
+   export CAPSULE_AES_KEY="$(./generate-aes-key.sh)"
+   PORT=8080 java -jar backend/build/libs/timecapsule-server.jar
+   ```
+   Для сборки и тестирования бэкенда (тестовый ключ задан в `backend/build.gradle.kts`):
+   ```bash
+   cd backend
+   ./gradlew test build fatJar
+   ```
+   Для сброса базы используйте `./reset-data.sh`. Доступен также запуск через Docker: `CAPSULE_AES_KEY="$(./generate-aes-key.sh)" docker compose up -d --build`.
 
-2. **Сборка релизного APK и AAB:**
+2. **Сборка Android-клиента (Debug / Staging / Release):**
+   Адрес сервера задаётся через `-PapiBaseUrl` (`BuildConfig.API_BASE_URL`):
+   - В `debug` по умолчанию используется `http://10.0.2.2:8080` (cleartext и ручная смена адреса доступны только в `debug` через `src/debug/res/xml/network_security_config.xml`).
+   - В `release` параметр `-PapiBaseUrl` обязателен и обязан использовать `https://`, иначе сборка завершится ошибкой.
    ```bash
    # 1. Генерация ключа подписи (если ещё не создан):
    ./make-keystore.sh
-   # 2. Сборка подписанного APK и AAB:
-   cd android-client && ./gradlew assembleRelease bundleRelease
+
+   # 2. Сборка и проверки:
+   cd android-client
+   ./gradlew lint testReleaseUnitTest assembleDebug
+   ./gradlew assembleRelease -PapiBaseUrl=https://api.example.com
+   ./gradlew bundleRelease -PapiBaseUrl=https://api.example.com
    ```
-   Собранные файлы:
-   - APK: `android-client/app/build/outputs/apk/release/app-release.apk`
-   - AAB: `android-client/app/build/outputs/bundle/release/app-release.aab`
+   Пути к артефактам:
+   - Debug APK: `android-client/app/build/outputs/apk/debug/app-debug.apk`
+   - Release APK: `android-client/app/build/outputs/apk/release/app-release.apk`
+   - Release AAB: `android-client/app/build/outputs/bundle/release/app-release.aab`
    - Server JAR: `backend/build/libs/timecapsule-server.jar`
 
 ---
@@ -49,10 +69,10 @@
    - **App name**: `Time Capsule 2.0`
    - **User support email** и **Developer contact information**: ваш email.
 4. На шаге **Scopes** добавьте стандартные области: `openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile`.
-5. На шаге **Test users** (пока приложение в статусе *Testing*) обязательно добавьте Google-аккаунты всех тестировщиков/участников, которые будут входить с Android-устройства.
+5. На шаге **Test users** (пока приложение в статусе *Testing*) добавьте Google-аккаунты тестировщиков.
 
 ### 2. Получение SHA-1 отпечатка ключа подписи Android
-Для привязки Android-приложения к Google Cloud нужен SHA-1 сертификата (для debug-сборки используется `~/.android/debug.keystore`). Выполните одну из команд:
+Для привязки Android-приложения к Google Cloud нужен SHA-1 сертификата:
 
 Через Gradle:
 ```bash
@@ -72,66 +92,54 @@ keytool -list -v \
 ### 3. Создание двух OAuth 2.0 Client ID (Android + Web)
 Перейдите в **APIs & Services → Credentials → Create Credentials → OAuth client ID**:
 
-1. **Клиент №1 — Android Client ID** (нужен Google Play Services для разрешения выдачи токена приложению):
+1. **Клиент №1 — Android Client ID**:
    - **Application type**: `Android`
    - **Package name**: `com.example.cyberpunk`
    - **SHA-1 certificate fingerprint**: вставьте SHA-1, полученный на шаге 2.
-   - Нажмите **Create**.
 
 2. **Клиент №2 — Web Application Client ID** (`GOOGLE_WEB_CLIENT_ID`):
    - **Application type**: `Web application`
-   - **Name**: `Time Capsule 2.0 Backend / Credential Manager`
-   - Нажмите **Create** и скопируйте сгенерированный **Client ID** вида `1234567890-abcdefg.apps.googleusercontent.com`.
-   - Именно **Web Client ID** передаётся в `GetGoogleIdOption.Builder().setServerClientId(...)` на Android и проверяется в `GoogleIdTokenVerifier` (`audience == GOOGLE_WEB_CLIENT_ID`) на бэкенде.
+   - Скопируйте **Client ID** вида `1234567890-abcdefg.apps.googleusercontent.com`.
+   - Именно Web Client ID передаётся в `GetGoogleIdOption.Builder().setServerClientId(...)` на Android и проверяется в `GoogleIdTokenVerifier` (`audience == GOOGLE_WEB_CLIENT_ID`) на бэкенде.
 
 ### 4. Прописывание `GOOGLE_WEB_CLIENT_ID` (без хардкода в репозитории)
-
 1. **Android (`android-client/local.properties`)**:
-   Добавьте ваш Web Client ID в файл `android-client/local.properties` (файл добавлен в `.gitignore`):
    ```properties
    sdk.dir=/Users/ghost/time-capsule-project/android-client/.android-sdk
    GOOGLE_WEB_CLIENT_ID=1234567890-abcdefg.apps.googleusercontent.com
    ```
-   Скрипт `android-client/app/build.gradle.kts` автоматически пробросит значение в `BuildConfig.GOOGLE_WEB_CLIENT_ID`.
-
-2. **Backend (переменная окружения `GOOGLE_WEB_CLIENT_ID`)**:
-   При запуске бэкенда передайте переменную окружения:
+2. **Backend (`.env` или переменная окружения `GOOGLE_WEB_CLIENT_ID`)**:
    ```bash
    cd backend
    export GOOGLE_WEB_CLIENT_ID="1234567890-abcdefg.apps.googleusercontent.com"
-   export DEMO_MODE="true"
+   export CAPSULE_AES_KEY="$(../generate-aes-key.sh)"
    ./gradlew run
    ```
-
-> **Запасной вариант для защиты проекта:** На экране входа также доступна секция **«Демо-вход (Maga / Zainab)»** (`POST /api/v1/auth/demo` при `DEMO_MODE=true`), которая позволяет войти и продемонстрировать работу капсулы времени даже без интернета или без настроенного Google-аккаунта на эмуляторе.
 
 ---
 
 ## API и авторизация
 
 - `POST /api/v1/auth/google` — принимает `GoogleAuthRequest(idToken)`, проверяет подпись, срок действия, `audience == GOOGLE_WEB_CLIENT_ID`, `issuer` и `email_verified` через `GoogleIdTokenVerifier`, создаёт/обновляет пользователя в таблице `Users`, создаёт сессию на 30 дней в таблице `Sessions` и возвращает `AuthResponse(user, sessionToken)`.
-- `POST /api/v1/auth/demo` — демо-вход для `user_maga` / `user_zainab` (работает только при `DEMO_MODE=true`).
 - `GET /api/v1/me` — возвращает `UserDto` текущего авторизованного пользователя.
-- `GET /api/v1/users?query=` — поиск зарегистрированных пользователей по имени или email для приглашения в капсулу (чужие email маскируются в формате `m***a@gmail.com`).
-- `POST /api/v1/capsules/join` — принимает `JoinCapsuleRequest(inviteCode)`. Проверяет существование капсулы по 6-символьному коду приглашения, добавляет авторизованного пользователя в список участников `CapsuleParticipants`, автоматически переводит капсулу в групповой режим `isGroupCapsule = true` и возвращает обновлённый `CapsuleDto`.
-- `POST /api/v1/capsules/{id}/open` — фиксирует факт открытия капсулы (`openedAt = now`) текущим пользователем. Возвращает `409 Conflict`, если капсула ещё не готова к открытию.
-- `POST /api/v1/capsules/{id}/archive` — перемещает капсулу в архив текущего пользователя (`archived = true`).
-- `POST /api/v1/capsules/{id}/unarchive` — возвращает капсулу из архива (`archived = false`).
-- `DELETE /api/v1/me/data` — полное удаление всех данных пользователя (созданные капсулы, участие в чужих капсулах, сессии).
-- `GET /api/v1/capsules` — возвращает список капсул времени. Каждая капсула содержит поле `creatorId`, `inviteCode`, вычисляемый статус для текущего пользователя (`status: SEALED | READY | OPENED | ARCHIVED`), признак гео-привязки `isGeoLocked`, адресата `recipient`, теги `tags` и тип `kind`.
-- Все эндпоинты `/api/v1/capsules/*` требуют заголовок `Authorization: Bearer <sessionToken>`. Без токена или с неверным/просроченным токеном сервер возвращает `401 Unauthorized`. Личность создателя капсулы и участника при `check-in` определяется строго по Bearer-токену.
+- `GET /api/v1/users?query=` — поиск зарегистрированных пользователей по имени или email для приглашения в капсулу (чужие email маскируются в формате `m***a@gmail.com`; `googleSub` и чужие raw-email не возвращаются).
+- `POST /api/v1/capsules` — создание личной или гео-капсулы с шифрованием этапов AES-256-GCM. Дата каждого этапа должна быть в будущем (минимум +1 минута).
+- `POST /api/v1/capsules/{id}/check-in` — фиксирует GPS-координаты и `lastSeenAt = now` авторизованного участника.
+- `POST /api/v1/capsules/join` — принимает `JoinCapsuleRequest(inviteCode)` и добавляет авторизованного пользователя в `CapsuleParticipants`.
+- `POST /api/v1/capsules/{id}/open` — фиксирует `openedAt = now` после выполнения всех условий (`now >= unlockDate`, а для гео-капсул ещё и нахождение всех участников в радиусе с `lastSeenAt` не старше 60 с). Возвращает `409 Conflict`, если условия ещё не выполнены.
+- `POST /api/v1/capsules/{id}/archive` / `unarchive` — управление архивом текущего пользователя.
+- `DELETE /api/v1/me/data` — полное удаление данных пользователя (созданные капсулы, участие в чужих капсулах, сессии).
+- `GET /api/v1/capsules` — возвращает список капсул текущего пользователя.
+- Все эндпоинты `/api/v1/capsules/*`, `/api/v1/users`, `/api/v1/me*` требуют заголовок `Authorization: Bearer <sessionToken>`.
 
 ---
 
 ## Возможности приложения Time Capsule 2.0
 
-1. **Раздел «Главная» (`HomeScreen`)**: персональное приветствие, крупная карточка быстрого запечатывания нового воспоминания, блок «Ближайшее открытие» с динамическим таймером обратного отсчёта до секунды, поле ввода кода приглашения и быстрый вход в радар.
-2. **Раздел «Капсулы» («Полка воспоминаний», `CapsulesShelfScreen`)**: поиск капсул по названию, типу, адресату и #тегам, разделение по 4 вкладкам статуса («Запечатанные», «Готовые», «Открытые», «Архив»), Pull-to-refresh, действие открытия для готовых капсул и меню архивации.
-3. **Раздел «Создать» (`CreateCapsuleScreen`)**: пошаговый мастер создания воспоминаний (Текст / Фото «Скоро» / Аудио «Скоро»), текст до 5000 символов, адресат, теги, чипы выбора срока (Завтра, Неделя, Месяц, Календарь, Демо), карточка предпросмотра, предупреждение о неизменяемости запечатанной капсулы и переключатель режима гео-локации.
-4. **Раздел «Идеи» (`IdeasScreen`)**: готовые шаблоны и вдохновение для капсул («Письмо себе через 10 лет», «Прогнозы на 2036 год», «Послание будущему ребёнку», «Годовщина», «День рождения», «Семейная история») с мгновенным переносом в форму создания.
-5. **Раздел «Настройки» (`SettingsScreen`)**: управление профилем, выход из аккаунта, переключение сервера и демо-режима, защита приложения 4-значным PIN-кодом с хэшированием (salt + SHA-256), безопасный JSON-экспорт данных (`Intent.ACTION_SEND`), удаление всех данных (`DELETE /api/v1/me/data`) и информационные диалоги.
-6. **Экран «Радар»**: радарная сетка, неоновая 3D-модель капсулы с динамической скоростью вращения, отслеживание GPS-позиции и автоматический периодический heartbeat check-in.
-7. **Хранилище данных**: постоянное хранение базы данных H2 в файле `./data/timecapsule.mv.db` на стороне бэкенда, сохраняющее данные между перезапусками сервера.
-8. **Эффекты открытия капсулы**: виброотклик (`HapticFeedback`) и неоновый всплеск при переходе капсулы в разблокированное состояние.
-9. **Таймлайн с подсветкой текущего этапа**: экран «Письмо в будущее по пунктам» с вертикальной шкалой времени, визуальной подсветкой текущего активного этапа, датами открытия и расшифровкой секретного текста (`AES-256-GCM`).
-
+1. **Раздел «Главная» (`HomeScreen`)**: персональное приветствие, быстрый переход к созданию нового воспоминания, блок «Ближайшее открытие» с обратным отсчётом, ввод кода приглашения и вход в радар.
+2. **Раздел «Капсулы» (`CapsulesShelfScreen`)**: поиск по названию, типу, адресату и #тегам, 4 вкладки статуса («Запечатанные», «Готовые», «Открытые», «Архив»), Pull-to-refresh, открытие и архивация.
+3. **Раздел «Создать» (`CreateCapsuleScreen`)**: пошаговый мастер создания с `DatePicker` и `TimePicker` (минимум +1 минута от текущего времени для удобного тестирования), карточкой предпросмотра (`dd.MM.yyyy HH:mm`) и переключателем режима гео-локации.
+4. **Раздел «Идеи» (`IdeasScreen`)**: шаблоны воспоминаний с переносом в форму создания.
+5. **Раздел «Настройки» (`SettingsScreen`)**: профиль, выход, 4-значный PIN-код (`salt + SHA-256`), экспорт JSON, удаление данных (`DELETE /api/v1/me/data`); в `debug`-сборках также доступна ручная настройка URL сервера.
+6. **Экран «Радар» (`RadarScreen`)**: радарная сетка, 3D-модель капсулы, отслеживание GPS-позиции и автоматический heartbeat check-in каждые 15 с.
+7. **Экран «Таймлайн» (`CapsuleStagesTimeline`)**: этапы послания с датой/временем и расшифровкой секретного текста (`AES-256-GCM`).

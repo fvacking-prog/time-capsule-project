@@ -3,6 +3,8 @@ package com.example.cyberpunk
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -69,12 +71,31 @@ private const val ROUTE_TIMELINE = "timeline"
 private const val ROUTE_MY_CAPSULES = "my_capsules"
 
 class MainActivity : ComponentActivity() {
+    private val capsuleViewModel: CapsuleViewModel by viewModels()
+    private var appWentToBackground = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         setContent {
             TimeCapsuleTheme {
-                TimeCapsuleApp()
+                TimeCapsuleApp(capsuleViewModel)
             }
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) {
+            appWentToBackground = true
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (appWentToBackground) {
+            appWentToBackground = false
+            capsuleViewModel.onAppForegrounded()
         }
     }
 }
@@ -94,7 +115,7 @@ fun TimeCapsuleApp(
         }
     }
 
-    if (uiState.showSettingsDialog) {
+    if (BuildConfig.DEBUG && uiState.showSettingsDialog) {
         ServerSettingsDialog(
             urlInput = uiState.settingsUrlInput,
             isChecking = uiState.isCheckingHealth,
@@ -155,7 +176,6 @@ fun TimeCapsuleApp(
                     isAuthenticating = uiState.isAuthenticating,
                     onGoogleIdTokenReceived = capsuleViewModel::signInWithGoogle,
                     onGoogleSignInError = capsuleViewModel::onGoogleSignInError,
-                    onDemoSignIn = capsuleViewModel::signInWithDemo,
                     onOpenSettings = capsuleViewModel::openSettingsDialog
                 )
             }
@@ -166,7 +186,6 @@ fun TimeCapsuleApp(
     if (uiState.showProfileDialog) {
         ProfileSelectionDialog(
             currentUser = uiState.currentUser,
-            onSelectDemoUser = capsuleViewModel::selectProfile,
             onLogout = capsuleViewModel::logout,
             onDismiss = capsuleViewModel::dismissProfileDialog
         )
@@ -202,9 +221,7 @@ fun TimeCapsuleApp(
             TimeCapsuleTopBar(
                 currentUsername = uiState.currentUsername,
                 currentPhotoUrl = uiState.currentPhotoUrl,
-                isDemoMode = uiState.isDemoMode,
                 onProfileClick = capsuleViewModel::openProfileDialog,
-                onDemoModeChange = capsuleViewModel::setDemoMode,
                 onSettingsClick = capsuleViewModel::openSettingsDialog
             )
         },
@@ -445,7 +462,6 @@ fun TimeCapsuleApp(
                     formState = uiState.createForm,
                     currentUserId = uiState.currentUserId,
                     availableUsers = uiState.availableUsers,
-                    isDemoMode = uiState.isDemoMode,
                     showConfirmDialog = uiState.showConfirmSealDialog,
                     onTitleChange = capsuleViewModel::updateCreateTitle,
                     onKindChange = capsuleViewModel::updateCreateKind,
@@ -454,6 +470,7 @@ fun TimeCapsuleApp(
                     onMessageChange = capsuleViewModel::updateCreateMessage,
                     onDateChipClick = capsuleViewModel::setCreateDateChip,
                     onCustomDateSelect = capsuleViewModel::setCreateCustomDate,
+                    onCustomTimeSelect = capsuleViewModel::setCreateCustomTime,
                     onGeoLockedToggle = capsuleViewModel::updateCreateIsGeoLocked,
                     onTakeMyLocation = capsuleViewModel::fetchLocationForCreateForm,
                     onRadiusChange = capsuleViewModel::updateCreateRadius,
@@ -462,6 +479,7 @@ fun TimeCapsuleApp(
                     onAddStage = capsuleViewModel::addCreateStage,
                     onRemoveStage = capsuleViewModel::removeCreateStage,
                     onStageDateChange = capsuleViewModel::updateCreateStageDate,
+                    onStageTimeChange = capsuleViewModel::updateCreateStageTime,
                     onStageSecretChange = capsuleViewModel::updateCreateStageSecret,
                     onOpenConfirmDialog = capsuleViewModel::openConfirmSealDialog,
                     onDismissConfirmDialog = capsuleViewModel::dismissConfirmSealDialog,
@@ -499,7 +517,6 @@ fun TimeCapsuleApp(
                 SettingsScreen(
                     uiState = uiState,
                     onOpenServerSettings = capsuleViewModel::openSettingsDialog,
-                    onDemoModeToggle = capsuleViewModel::setDemoMode,
                     onOpenSetPinDialog = capsuleViewModel::openSetPinDialog,
                     onRemovePin = capsuleViewModel::removePin,
                     onToggleNotifications = capsuleViewModel::toggleNotifications,
@@ -525,13 +542,6 @@ fun TimeCapsuleApp(
                     },
                     onDismissLockedDialog = capsuleViewModel::dismissLockedDialog,
                     onRealHeartbeatTick = { cid, _ -> capsuleViewModel.performRealHeartbeatTick(cid) },
-                    onDemoForceCheckInClick = { uiState.selectedCapsuleId?.let { capsuleViewModel.onDemoForceCheckInClicked(it) } },
-                    onDemoHeartbeatTick = { capsuleId, isFirstTick ->
-                        capsuleViewModel.performDemoForceCheckInTick(
-                            capsuleId = capsuleId,
-                            notifyUser = isFirstTick
-                        )
-                    },
                     onRefreshClick = capsuleViewModel::loadCapsules
                 )
             }

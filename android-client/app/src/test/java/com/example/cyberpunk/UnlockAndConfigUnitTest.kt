@@ -1,0 +1,117 @@
+package com.example.cyberpunk
+
+import com.example.cyberpunk.data.ApiConfig
+import com.example.cyberpunk.data.GeoHelper
+import com.example.cyberpunk.data.UnlockDateTimeHelper
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.ZonedDateTime
+import kotlin.math.abs
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+class UnlockAndConfigUnitTest {
+
+    @Test
+    fun `validateMinimumLead enforces strictly at least plus 1 minute`() {
+        val now = 1_700_000_000_000L
+        assertFalse(UnlockDateTimeHelper.validateMinimumLead(now - 1_000L, now))
+        assertFalse(UnlockDateTimeHelper.validateMinimumLead(now + 59_999L, now))
+        assertTrue(UnlockDateTimeHelper.validateMinimumLead(now + 60_000L, now))
+        assertTrue(UnlockDateTimeHelper.validateMinimumLead(now + 120_000L, now))
+    }
+
+    @Test
+    fun `mergePickedUtcDateWithExistingTime preserves time for future date and advances past time today`() {
+        val zone = ZoneId.of("UTC")
+        // now = 2026-11-11T12:20:30Z
+        val nowMillis = ZonedDateTime.of(2026, 11, 11, 12, 20, 30, 0, ZoneOffset.UTC)
+            .toInstant().toEpochMilli()
+        val existingMillis = ZonedDateTime.of(2026, 11, 18, 9, 15, 0, 0, ZoneOffset.UTC)
+            .toInstant().toEpochMilli()
+
+        // Selecting today in DatePicker (09:15 < 12:22) clamps to earliest valid (12:22:00)
+        val todayUtc = ZonedDateTime.of(2026, 11, 11, 0, 0, 0, 0, ZoneOffset.UTC)
+            .toInstant().toEpochMilli()
+        val mergedToday = UnlockDateTimeHelper.mergePickedUtcDateWithExistingTime(
+            utcDateMillis = todayUtc,
+            existingMillis = existingMillis,
+            nowMillis = nowMillis,
+            zoneId = zone
+        )
+        val mergedTodayZdt = Instant.ofEpochMilli(mergedToday).atZone(zone)
+        assertEquals(2026, mergedTodayZdt.year)
+        assertEquals(11, mergedTodayZdt.monthValue)
+        assertEquals(11, mergedTodayZdt.dayOfMonth)
+        assertEquals(12, mergedTodayZdt.hour)
+        assertEquals(22, mergedTodayZdt.minute)
+        assertTrue(UnlockDateTimeHelper.validateMinimumLead(mergedToday, nowMillis))
+
+        // Selecting future day preserves existing 09:15 time
+        val futureUtc = ZonedDateTime.of(2026, 11, 20, 0, 0, 0, 0, ZoneOffset.UTC)
+            .toInstant().toEpochMilli()
+        val mergedFuture = UnlockDateTimeHelper.mergePickedUtcDateWithExistingTime(
+            utcDateMillis = futureUtc,
+            existingMillis = existingMillis,
+            nowMillis = nowMillis,
+            zoneId = zone
+        )
+        val mergedFutureZdt = Instant.ofEpochMilli(mergedFuture).atZone(zone)
+        assertEquals(20, mergedFutureZdt.dayOfMonth)
+        assertEquals(9, mergedFutureZdt.hour)
+        assertEquals(15, mergedFutureZdt.minute)
+    }
+
+    @Test
+    fun `applyTimeOfDay updates hours and minutes cleanly`() {
+        val zone = ZoneId.of("UTC")
+        val base = ZonedDateTime.of(2026, 11, 12, 10, 0, 0, 0, ZoneOffset.UTC)
+            .toInstant().toEpochMilli()
+        val updated = UnlockDateTimeHelper.applyTimeOfDay(base, hour = 18, minute = 45, zoneId = zone)
+        val zdt = Instant.ofEpochMilli(updated).atZone(zone)
+        assertEquals(12, zdt.dayOfMonth)
+        assertEquals(18, zdt.hour)
+        assertEquals(45, zdt.minute)
+        assertEquals(0, zdt.second)
+    }
+
+    @Test
+    fun `ApiConfig rejects cleartext in release and accepts it only when allowCleartext is true`() {
+        assertTrue(ApiConfig.isValidServerUrl("https://api.timecapsule.example.com/", allowCleartext = false))
+        assertFalse(ApiConfig.isValidServerUrl("http://10.0.2.2:8080", allowCleartext = false))
+        assertFalse(ApiConfig.isValidServerUrl("http://api.example.com", allowCleartext = false))
+        assertFalse(ApiConfig.isValidServerUrl("", allowCleartext = false))
+        assertFalse(ApiConfig.isValidServerUrl("ftp://api.example.com", allowCleartext = true))
+
+        assertTrue(ApiConfig.isValidServerUrl("http://10.0.2.2:8080", allowCleartext = true))
+        assertEquals("https://api.example.com", ApiConfig.normalizeUrl("  HTTPS://api.example.com/  "))
+    }
+
+    @Test
+    fun `ApiConfig resolveInitialUrl ignores persisted override in release and uses it in debug`() {
+        val releaseResolved = ApiConfig.resolveInitialUrl(
+            buildConfigUrl = "https://prod.timecapsule.example.com",
+            persistedUrl = "http://10.0.2.2:8080",
+            isDebug = false
+        )
+        assertEquals("https://prod.timecapsule.example.com", releaseResolved)
+
+        val debugResolved = ApiConfig.resolveInitialUrl(
+            buildConfigUrl = "http://10.0.2.2:8080",
+            persistedUrl = "http://192.168.1.42:8080/",
+            isDebug = true
+        )
+        assertEquals("http://192.168.1.42:8080", debugResolved)
+    }
+
+    @Test
+    fun `GeoHelper haversineMeters calculates distance accurately`() {
+        assertEquals(0.0, GeoHelper.haversineMeters(40.2825, 69.6221, 40.2825, 69.6221), 1e-6)
+        val oneDeg = GeoHelper.haversineMeters(0.0, 0.0, 1.0, 0.0)
+        assertTrue(abs(oneDeg - 111_194.9266) < 0.5)
+    }
+}
+

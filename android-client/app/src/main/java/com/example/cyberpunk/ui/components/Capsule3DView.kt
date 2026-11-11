@@ -575,6 +575,10 @@ fun Capsule3DView(
     val mesh = remember { Capsule3DMesh() }
     val neonPaints = remember { NeonGlowPaints() }
 
+    // Адаптивное качество для устройств со слабым GPU: если кадр длится > 24 мс, снижаем число проходов свечения
+    var avgFrameDurationMs by remember { mutableFloatStateOf(16f) }
+    val isWeakGpu = avgFrameDurationMs > 24f
+
     Canvas(
         modifier = modifier
             .pointerInput(Unit) {
@@ -591,6 +595,7 @@ fun Capsule3DView(
                 }
             }
     ) {
+        val frameStartTime = System.currentTimeMillis()
         val canvasWidth = size.width
         val canvasHeight = size.height
         if (canvasWidth <= 0f || canvasHeight <= 0f) return@Canvas
@@ -650,7 +655,8 @@ fun Capsule3DView(
             minDim = minDim,
             statusColor = statusGlowColor,
             coreScale = effectiveCoreScale,
-            flashIntensity = unlockFlash.value
+            flashIntensity = unlockFlash.value,
+            isWeakGpu = isWeakGpu
         )
 
         // 5. Pass 3: Front-facing 3D edges (z >= 0) & Glowing Vertex Nodes
@@ -664,6 +670,10 @@ fun Capsule3DView(
             flashIntensity = unlockFlash.value,
             minDim = minDim
         )
+
+        // Замер длительности кадра для адаптивного сглаживания
+        val frameDuration = System.currentTimeMillis() - frameStartTime
+        avgFrameDurationMs = avgFrameDurationMs * 0.92f + frameDuration * 0.08f
     }
 }
 
@@ -730,7 +740,8 @@ private fun DrawScope.drawGlowingCore(
     minDim: Float,
     statusColor: Color,
     coreScale: Float,
-    flashIntensity: Float
+    flashIntensity: Float,
+    isWeakGpu: Boolean = false
 ) {
     val baseRadius = minDim * 0.075f * coreScale
     val outerGlowRadius = baseRadius * (2.3f + flashIntensity * 1.4f)
@@ -743,15 +754,18 @@ private fun DrawScope.drawGlowingCore(
     drawIntoCanvas { canvas ->
         val native = canvas.nativeCanvas
 
-        neonPaints.coreOuterGlowPaint.color = outerGlowColor
-            .copy(alpha = (0.58f + flashIntensity * 0.35f).coerceAtMost(1f))
-            .toArgb()
-        native.drawCircle(
-            centerOffset.x,
-            centerOffset.y,
-            outerGlowRadius,
-            neonPaints.coreOuterGlowPaint
-        )
+        // На слабых GPU пропускаем широкий размытый проход (outer bloom) для сохранения плавности 60 FPS
+        if (!isWeakGpu) {
+            neonPaints.coreOuterGlowPaint.color = outerGlowColor
+                .copy(alpha = (0.58f + flashIntensity * 0.35f).coerceAtMost(1f))
+                .toArgb()
+            native.drawCircle(
+                centerOffset.x,
+                centerOffset.y,
+                outerGlowRadius,
+                neonPaints.coreOuterGlowPaint
+            )
+        }
 
         neonPaints.coreInnerGlowPaint.color = innerGlowColor
             .copy(alpha = (0.85f + flashIntensity * 0.15f).coerceAtMost(1f))

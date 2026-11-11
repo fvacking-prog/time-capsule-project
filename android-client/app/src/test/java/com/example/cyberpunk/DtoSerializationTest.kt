@@ -46,7 +46,7 @@ class DtoSerializationTest {
         )
         val participant = ParticipantStatusDto(
             userId = "u_1",
-            username = "Maga",
+            username = "Alice",
             distanceMeters = 12.5,
             lastSeenAt = 1794300010000L,
             isNearbyAndRecent = true,

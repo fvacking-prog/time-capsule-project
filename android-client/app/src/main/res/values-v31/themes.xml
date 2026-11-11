@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.TimeCapsule" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#1A1B26</item>
+        <item name="android:statusBarColor">#1A1B26</item>
+        <item name="android:navigationBarColor">#1A1B26</item>
+        <!-- Android 12+ Splash Screen API -->
+        <item name="android:windowSplashScreenBackground">#1A1B26</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+    </style>
+</resources>
+

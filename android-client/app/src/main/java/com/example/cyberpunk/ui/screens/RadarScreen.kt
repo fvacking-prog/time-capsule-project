@@ -76,7 +76,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.example.cyberpunk.R
-import com.example.cyberpunk.data.MockCapsuleRepository
+import com.example.cyberpunk.data.GeoHelper
 import com.example.cyberpunk.ui.components.Capsule3DView
 import com.example.cyberpunk.ui.theme.TokyoAccent
 import com.example.cyberpunk.ui.theme.TokyoBackground
@@ -106,8 +106,6 @@ fun RadarScreen(
     onCapsule3DClick: () -> Unit,
     onDismissLockedDialog: () -> Unit,
     onRealHeartbeatTick: suspend (String, String) -> Unit,
-    onDemoForceCheckInClick: () -> Unit,
-    onDemoHeartbeatTick: suspend (String, Boolean) -> Unit,
     onRefreshClick: () -> Unit
 ) {
     val context = LocalContext.current
@@ -145,8 +143,6 @@ fun RadarScreen(
     val capsule = uiState.selectedCapsule
     val capsuleId = capsule?.id
     val userId = uiState.currentUserId
-    val isDemoMode = uiState.isDemoMode
-    val isDemoForceActive = uiState.isDemoForceActive
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val haptic = LocalHapticFeedback.current
@@ -173,26 +169,12 @@ fun RadarScreen(
         previousUnlockedState = currentUnlocked
     }
 
-    // Real-data mode heartbeat loop (every 15 seconds while screen is STARTED and isDemoMode == false)
-    LaunchedEffect(capsuleId, userId, isDemoMode, uiState.hasLocationPermission, lifecycleOwner) {
-        if (!isDemoMode && capsuleId != null && userId != null && uiState.hasLocationPermission) {
+    // Heartbeat loop (every 15 seconds while screen is STARTED and location permission is granted)
+    LaunchedEffect(capsuleId, userId, uiState.hasLocationPermission, lifecycleOwner) {
+        if (capsuleId != null && userId != null && uiState.hasLocationPermission) {
             lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 while (isActive) {
                     onRealHeartbeatTick(capsuleId, userId)
-                    delay(15_000L)
-                }
-            }
-        }
-    }
-
-    // Demo mode heartbeat loop (every 15 seconds while screen is STARTED and Demo Force Check-in is active)
-    LaunchedEffect(capsuleId, isDemoMode, isDemoForceActive, lifecycleOwner) {
-        if (isDemoMode && isDemoForceActive && capsuleId != null) {
-            var firstTick = true
-            lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                while (isActive) {
-                    onDemoHeartbeatTick(capsuleId, firstTick)
-                    firstTick = false
                     delay(15_000L)
                 }
             }
@@ -484,11 +466,10 @@ fun RadarScreen(
             }
         }
 
-        // 2. Animated Radar Canvas & Heartbeat / Demo Controls
+        // 2. Animated Radar Canvas & Heartbeat Controls
         AnimatedGeoRadarCard(
             capsule = capsule,
             uiState = uiState,
-            onDemoForceCheckInClick = onDemoForceCheckInClick,
             onOpenTimelineClick = onCapsule3DClick,
             onRefreshClick = onRefreshClick
         )
@@ -508,7 +489,6 @@ private val PulseRadarRingStroke = Stroke(width = 2.5f)
 private fun AnimatedGeoRadarCard(
     capsule: CapsuleDto,
     uiState: CapsuleUiState,
-    onDemoForceCheckInClick: () -> Unit,
     onOpenTimelineClick: () -> Unit,
     onRefreshClick: () -> Unit
 ) {
@@ -535,7 +515,7 @@ private fun AnimatedGeoRadarCard(
     val currentUserParticipant = capsule.participants.find { it.userId == uiState.currentUserId }
     val distanceMeters: Double? = currentUserParticipant?.distanceMeters
         ?: if (uiState.deviceLat != null && uiState.deviceLon != null) {
-            MockCapsuleRepository.haversineMeters(
+            GeoHelper.haversineMeters(
                 uiState.deviceLat,
                 uiState.deviceLon,
                 capsule.latitude,
@@ -718,8 +698,7 @@ private fun AnimatedGeoRadarCard(
             ) {
                 val indicatorColor = when {
                     uiState.isSyncing -> TokyoAccent
-                    uiState.isDemoMode && uiState.isDemoForceActive -> TokyoSuccess
-                    !uiState.isDemoMode && uiState.hasLocationPermission -> TokyoSuccess
+                    uiState.hasLocationPermission -> TokyoSuccess
                     else -> TokyoSecondary
                 }
                 Box(
@@ -731,36 +710,13 @@ private fun AnimatedGeoRadarCard(
                 Spacer(modifier = Modifier.width(8.dp))
                 val heartbeatText = when {
                     uiState.isSyncing -> stringResource(R.string.heartbeat_syncing_now)
-                    uiState.isDemoMode && uiState.isDemoForceActive -> stringResource(R.string.heartbeat_demo_active)
-                    uiState.isDemoMode -> stringResource(R.string.heartbeat_demo_idle)
-                    else -> stringResource(R.string.heartbeat_real_active)
+                    uiState.hasLocationPermission -> stringResource(R.string.heartbeat_real_active)
+                    else -> stringResource(R.string.heartbeat_waiting_permission)
                 }
                 Text(
                     text = heartbeatText,
                     style = MaterialTheme.typography.labelMedium,
                     color = TokyoOnSurface
-                )
-            }
-
-            // Demo Force Check-in Button
-            Button(
-                onClick = onDemoForceCheckInClick,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = TokyoSecondary,
-                    contentColor = TokyoBackground
-                ),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Bolt,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = stringResource(R.string.btn_demo_force_checkin),
-                    fontWeight = FontWeight.Bold
                 )
             }
 
