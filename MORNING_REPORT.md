@@ -142,3 +142,4 @@
    - Страница `docs/index.html` использует цвета палитры Tokyo Night; при открытии на `*.github.io/<repo>` автоматически подставляет ссылку на `/releases/latest/download/timecapsule-release.apk`.
    - Скрипт `release.sh` перед изменением `versionCode` проверяет `https://` адрес и наличие `keystore.properties`, не затрагивая существующие `release.keystore` и `keystore.properties`.
 ```
+
