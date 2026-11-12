@@ -2,7 +2,12 @@ package com.example.cyberpunk
 
 import com.example.cyberpunk.data.ApiConfig
 import com.example.cyberpunk.data.CapsuleUnlockScheduler
+import com.example.cyberpunk.data.ColdStartRetry
 import com.example.cyberpunk.data.GeoHelper
+import com.example.cyberpunk.data.SessionExpiredException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import kotlinx.coroutines.runBlocking
 import com.example.cyberpunk.data.HandleLocalValidation
 import com.example.cyberpunk.data.HandleValidator
 import com.example.cyberpunk.data.UnlockDateTimeHelper
@@ -170,6 +175,58 @@ class UnlockAndConfigUnitTest {
         assertEquals(120_000L, plans.first().delayMillis)
         assertEquals("alice", plans.first().creatorHandle)
         assertTrue(plans.first().isInbox)
+    }
+
+    @Test
+    fun `ColdStartRetry retries up to 3 times with increasing backoff and skips non-retryable errors`() = runBlocking {
+        val recordedDelays = mutableListOf<Long>()
+        val retryAttempts = mutableListOf<Int>()
+        var calls = 0
+
+        val result = ColdStartRetry.execute(
+            delayFn = { ms -> recordedDelays.add(ms) },
+            onRetry = { attempt, _ -> retryAttempts.add(attempt) }
+        ) {
+            calls += 1
+            if (calls <= 3) {
+                if (calls == 1) throw ConnectException("Connection refused")
+                throw SocketTimeoutException("Cold start timeout")
+            }
+            "WOKEN_UP"
+        }
+
+        assertEquals("WOKEN_UP", result)
+        assertEquals(4, calls)
+        assertEquals(listOf(1, 2, 3), retryAttempts)
+        assertEquals(listOf(3_000L, 6_000L, 12_000L), recordedDelays)
+        assertTrue(recordedDelays[0] < recordedDelays[1] && recordedDelays[1] < recordedDelays[2])
+
+        // Exhausting all 3 retries rethrows cleanly
+        var exhaustCalls = 0
+        var thrown: Throwable? = null
+        try {
+            ColdStartRetry.execute<String>(delayFn = {}) {
+                exhaustCalls += 1
+                throw SocketTimeoutException("Still sleeping")
+            }
+        } catch (t: Throwable) {
+            thrown = t
+        }
+        assertEquals(4, exhaustCalls)
+        assertTrue(thrown is SocketTimeoutException)
+
+        // Non-retryable 401/IllegalStateException fails on first attempt without delay
+        var nonRetryCalls = 0
+        val nonRetryDelays = mutableListOf<Long>()
+        try {
+            ColdStartRetry.execute<String>(delayFn = { nonRetryDelays.add(it) }) {
+                nonRetryCalls += 1
+                throw SessionExpiredException("HTTP 401")
+            }
+        } catch (_: SessionExpiredException) {
+        }
+        assertEquals(1, nonRetryCalls)
+        assertTrue(nonRetryDelays.isEmpty())
     }
 }
 

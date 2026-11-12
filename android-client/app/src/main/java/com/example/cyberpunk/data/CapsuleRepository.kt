@@ -59,13 +59,15 @@ interface CapsuleRepository {
     suspend fun checkHealth(baseUrl: String = ApiConfig.BASE_URL): Boolean
 }
 
-class RemoteCapsuleRepository : CapsuleRepository {
+class RemoteCapsuleRepository(
+    private val onWakeUpStateChange: ((Boolean) -> Unit)? = null
+) : CapsuleRepository {
     private val client = HttpClient(OkHttp) {
         expectSuccess = true
         install(HttpTimeout) {
-            requestTimeoutMillis = 10_000L
-            connectTimeoutMillis = 10_000L
-            socketTimeoutMillis = 10_000L
+            requestTimeoutMillis = 15_000L
+            connectTimeoutMillis = 15_000L
+            socketTimeoutMillis = 15_000L
         }
         install(ContentNegotiation) {
             json(
@@ -77,8 +79,8 @@ class RemoteCapsuleRepository : CapsuleRepository {
         }
         engine {
             config {
-                connectTimeout(10, TimeUnit.SECONDS)
-                readTimeout(10, TimeUnit.SECONDS)
+                connectTimeout(15, TimeUnit.SECONDS)
+                readTimeout(15, TimeUnit.SECONDS)
             }
         }
     }
@@ -100,9 +102,19 @@ class RemoteCapsuleRepository : CapsuleRepository {
         }
     }
 
-    private suspend inline fun <T> executeWithAuthCheck(block: () -> T): T {
+    private suspend inline fun <T> executeWithAuthCheck(crossinline block: suspend () -> T): T {
+        var didTriggerWakeUp = false
         try {
-            return block()
+            return ColdStartRetry.execute(
+                onRetry = { _, _ ->
+                    didTriggerWakeUp = true
+                    onWakeUpStateChange?.invoke(true)
+                }
+            ) {
+                block()
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: ResponseException) {
             if (e.response.status == HttpStatusCode.Unauthorized) {
                 throw SessionExpiredException("HTTP 401 Unauthorized")
@@ -120,9 +132,19 @@ class RemoteCapsuleRepository : CapsuleRepository {
         } catch (e: java.net.UnknownHostException) {
             throw RuntimeException("Не удалось найти сервер. Проверьте подключение и адрес сервера.", e)
         } catch (e: java.net.ConnectException) {
-            throw RuntimeException("Сервер недоступен. Проверьте подключение и запуск бэкенда.", e)
+            throw RuntimeException("Сервер недоступен. Подождите немного или проверьте адрес сервера.", e)
         } catch (e: java.net.SocketTimeoutException) {
-            throw RuntimeException("Таймаут подключения к серверу. Попробуйте снова.", e)
+            throw RuntimeException("Сервер долго не отвечает (возможно, просыпается). Попробуйте снова.", e)
+        } catch (e: io.ktor.client.network.sockets.SocketTimeoutException) {
+            throw RuntimeException("Сервер долго не отвечает (возможно, просыпается). Попробуйте снова.", e)
+        } catch (e: io.ktor.client.plugins.HttpRequestTimeoutException) {
+            throw RuntimeException("Сервер долго не отвечает (возможно, просыпается). Попробуйте снова.", e)
+        } catch (e: io.ktor.client.network.sockets.ConnectTimeoutException) {
+            throw RuntimeException("Сервер долго не отвечает (возможно, просыпается). Попробуйте снова.", e)
+        } finally {
+            if (didTriggerWakeUp) {
+                onWakeUpStateChange?.invoke(false)
+            }
         }
     }
 
@@ -286,7 +308,21 @@ class RemoteCapsuleRepository : CapsuleRepository {
             return false
         }
         val target = "$normalized/health"
-        val response = client.get(target)
-        return response.status.isSuccess() && response.bodyAsText().trim().equals("ok", ignoreCase = true)
+        var didTriggerWakeUp = false
+        return try {
+            ColdStartRetry.execute(
+                onRetry = { _, _ ->
+                    didTriggerWakeUp = true
+                    onWakeUpStateChange?.invoke(true)
+                }
+            ) {
+                val response = client.get(target)
+                response.status.isSuccess() && response.bodyAsText().trim().equals("ok", ignoreCase = true)
+            }
+        } finally {
+            if (didTriggerWakeUp) {
+                onWakeUpStateChange?.invoke(false)
+            }
+        }
     }
 }

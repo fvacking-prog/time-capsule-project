@@ -5,9 +5,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.AllInbox
@@ -172,11 +182,12 @@ fun TimeCapsuleApp(
             containerColor = TokyoBackground,
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
         ) { innerPadding ->
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
+                ServerWakingUpBanner(visible = uiState.isServerWakingUp)
                 LoginScreen(
                     isAuthenticating = uiState.isAuthenticating,
                     onGoogleIdTokenReceived = capsuleViewModel::signInWithGoogle,
@@ -194,11 +205,12 @@ fun TimeCapsuleApp(
             containerColor = TokyoBackground,
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
         ) { innerPadding ->
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
+                ServerWakingUpBanner(visible = uiState.isServerWakingUp)
                 ChooseHandleScreen(
                     currentUser = uiState.currentUser,
                     handleInput = uiState.handleInput,
@@ -418,11 +430,17 @@ fun TimeCapsuleApp(
             }
         }
     ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = ROUTE_HOME,
-            modifier = Modifier.padding(innerPadding)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
         ) {
+            ServerWakingUpBanner(visible = uiState.isServerWakingUp)
+            NavHost(
+                navController = navController,
+                startDestination = ROUTE_HOME,
+                modifier = Modifier.weight(1f)
+            ) {
             composable(ROUTE_HOME) {
                 HomeScreen(
                     uiState = uiState,
@@ -605,5 +623,31 @@ fun TimeCapsuleApp(
                 )
             }
         }
+        }
+    }
+}
+
+@Composable
+private fun ServerWakingUpBanner(visible: Boolean) {
+    if (!visible) return
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(TokyoSurface)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(16.dp),
+            color = TokyoAccent,
+            strokeWidth = 2.dp
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            text = stringResource(R.string.server_waking_up),
+            style = MaterialTheme.typography.bodySmall,
+            color = TokyoAccent
+        )
     }
 }

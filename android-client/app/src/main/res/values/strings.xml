@@ -320,4 +320,5 @@
     <string name="notification_unlock_title">Капсула готова к открытию</string>
     <string name="notification_unlock_body">Капсула «%1$s» достигла даты открытия</string>
     <string name="notification_inbox_unlock_body">Входящая капсула «%1$s» от @%2$s готова к открытию</string>
+    <string name="server_waking_up">Сервер просыпается, подождите до минуты</string>
 </resources>

@@ -6,6 +6,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.ContentConvertException
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
+import io.ktor.server.application.ApplicationStopped
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
@@ -54,8 +55,16 @@ fun main() {
         exitProcess(1)
     }
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
-    embeddedServer(Netty, port = port, host = "0.0.0.0", module = Application::module)
-        .start(wait = true)
+    try {
+        embeddedServer(Netty, port = port, host = "0.0.0.0", module = Application::module)
+            .start(wait = true)
+    } catch (e: Throwable) {
+        System.err.println(
+            "КРИТИЧЕСКАЯ ОШИБКА ЗАПУСКА СЕРВЕРА: ${e.message ?: e.javaClass.simpleName}"
+        )
+        DatabaseConfig.closePool()
+        exitProcess(1)
+    }
 }
 
 fun Application.module() {
@@ -73,40 +82,41 @@ fun Application.module() {
         logger.warn("GoogleIdTokenVerifier init check note: ${t.message}")
     }
 
-    val dataDir = java.io.File("./data")
-    if (!dataDir.exists()) {
-        dataDir.mkdirs()
-    }
-
-    val dbUrl = System.getenv("H2_URL") ?: "jdbc:h2:file:./data/timecapsule;DB_CLOSE_DELAY=-1"
-    Database.connect(
-        url = dbUrl,
-        driver = "org.h2.Driver"
+    val dbSpec = DatabaseConfig.resolveConnectionSpec()
+    logger.info(
+        "Подключение к БД: engine={}, url={}, maxPoolSize={}, connectionTimeoutMs={}",
+        if (dbSpec.isPostgres) "PostgreSQL" else "H2",
+        dbSpec.jdbcUrl,
+        DatabaseConfig.MAX_POOL_SIZE,
+        DatabaseConfig.CONNECTION_TIMEOUT_MS
     )
 
-    // JVM Shutdown hook для корректного освобождения блокировки файла БД
+    val dataSource = try {
+        DatabaseConfig.initPool(dbSpec)
+    } catch (e: DatabaseUnavailableException) {
+        System.err.println("================================================================================")
+        System.err.println(e.message)
+        System.err.println("================================================================================")
+        throw e
+    }
+    Database.connect(dataSource)
+
+    // JVM Shutdown hook и подписка остановки Ktor для корректного закрытия пула HikariCP
     Runtime.getRuntime().addShutdownHook(Thread {
-        try {
-            transaction {
-                exec("SHUTDOWN") {}
-            }
-        } catch (_: Throwable) {}
+        DatabaseConfig.closePool()
     })
+    monitor.subscribe(ApplicationStopped) {
+        DatabaseConfig.closePool()
+    }
 
     try {
         migrateDatabase()
-    } catch (e: Exception) {
-        val rootCause = generateSequence(e as Throwable) { it.cause }.lastOrNull() ?: e
-        val msg = "${e.message} ${rootCause.message}"
-        if (msg.contains("Database may be already in use") || msg.contains("90020") || msg.contains("file is locked") || msg.contains("База данных уже используется")) {
-            System.err.println("================================================================================")
-            System.err.println("ОШИБКА: База данных ./data/timecapsule заблокирована другим процессом.")
-            System.err.println("Возможно, сервер Time Capsule уже запущен (проверьте lsof ./data/timecapsule.mv.db).")
-            System.err.println("Завершите старый процесс перед повторным запуском.")
-            System.err.println("================================================================================")
-            throw IllegalStateException("База данных ./data/timecapsule заблокирована другим процессом. Завершите старый процесс.", e)
-        }
-        throw e
+    } catch (e: Throwable) {
+        DatabaseConfig.closePool()
+        val rootCause = generateSequence(e) { it.cause }.lastOrNull() ?: e
+        val msg = "КРИТИЧЕСКАЯ ОШИБКА МИГРАЦИИ БД: Не удалось создать или обновить таблицы (${rootCause.message ?: e.message})."
+        System.err.println(msg)
+        throw DatabaseUnavailableException(msg, e)
     }
 
     // Фоновая периодическая очистка просроченных сессий раз в 60 секунд

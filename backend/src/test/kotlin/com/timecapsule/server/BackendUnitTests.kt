@@ -1511,5 +1511,86 @@ class BackendUnitTests {
         }
         assertEquals(HttpStatusCode.Forbidden, blockedSendResp.status)
     }
+
+    @Test
+    fun `DatabaseConfig parses Neon postgresql URL, configures Hikari maxPoolSize 3 timeout 10s, and falls back to H2`() {
+        val neonUrl = "postgresql://neon_user:p%40ss%3A123@ep-cool-host-123.us-east-2.aws.neon.tech/neondb?sslmode=require"
+        val spec = DatabaseConfig.resolveConnectionSpec(databaseUrlEnv = neonUrl, h2UrlEnv = null)
+        assertTrue(spec.isPostgres)
+        assertEquals("org.postgresql.Driver", spec.driverClassName)
+        assertEquals(
+            "jdbc:postgresql://ep-cool-host-123.us-east-2.aws.neon.tech/neondb?sslmode=require",
+            spec.jdbcUrl
+        )
+        assertEquals("neon_user", spec.username)
+        assertEquals("p@ss:123", spec.password)
+
+        val herokuAlias = DatabaseConfig.resolveConnectionSpec(
+            databaseUrlEnv = "postgres://u1:pw1@db.internal:5433/capsules",
+            h2UrlEnv = null
+        )
+        assertEquals("jdbc:postgresql://db.internal:5433/capsules", herokuAlias.jdbcUrl)
+        assertEquals("u1", herokuAlias.username)
+        assertEquals("pw1", herokuAlias.password)
+
+        val hikariConfig = DatabaseConfig.buildHikariConfig(spec)
+        assertEquals(3, hikariConfig.maximumPoolSize)
+        assertEquals(10_000L, hikariConfig.connectionTimeout)
+
+        val h2Fallback = DatabaseConfig.resolveConnectionSpec(databaseUrlEnv = "  ", h2UrlEnv = null)
+        assertFalse(h2Fallback.isPostgres)
+        assertEquals("org.h2.Driver", h2Fallback.driverClassName)
+        assertEquals("jdbc:h2:file:./data/timecapsule;DB_CLOSE_DELAY=-1", h2Fallback.jdbcUrl)
+
+        assertFailsWith<DatabaseUnavailableException> {
+            DatabaseConfig.parsePostgresUrl("mysql://user:pass@localhost/db")
+        }
+    }
+
+    @Test
+    fun `HikariCP initPool on H2 runs migrations, reports healthy GET health, and closes cleanly`() = testApplication {
+        val memUrl = "jdbc:h2:mem:test_hikari_lifecycle_${UUID.randomUUID()};DB_CLOSE_DELAY=-1"
+        val spec = DatabaseConfig.resolveConnectionSpec(databaseUrlEnv = null, h2UrlEnv = memUrl)
+        val pool = DatabaseConfig.initPool(spec)
+        try {
+            Database.connect(pool)
+            migrateDatabase()
+            assertTrue(DatabaseConfig.isDatabaseHealthy())
+
+            application {
+                installSerializationAndErrors()
+                routing { capsuleRoutes() }
+            }
+
+            val healthyResp = client.get("/health")
+            assertEquals(HttpStatusCode.OK, healthyResp.status)
+            assertEquals("ok", healthyResp.bodyAsText())
+
+            val prevHealthFn = healthCheckFn
+            healthCheckFn = { false }
+            try {
+                val downResp = client.get("/health")
+                assertEquals(HttpStatusCode.ServiceUnavailable, downResp.status)
+                assertEquals("database_unavailable", downResp.bodyAsText())
+            } finally {
+                healthCheckFn = prevHealthFn
+            }
+        } finally {
+            DatabaseConfig.closePool()
+            assertTrue(pool.isClosed)
+        }
+    }
+
+    @Test
+    fun `initPool throws friendly DatabaseUnavailableException when PostgreSQL host is unreachable`() {
+        val unreachableSpec = DatabaseConfig.parsePostgresUrl(
+            "postgresql://postgres:secret@127.0.0.1:59999/timecapsule?sslmode=disable&connectTimeout=1"
+        )
+        val ex = assertFailsWith<DatabaseUnavailableException> {
+            DatabaseConfig.initPool(unreachableSpec)
+        }
+        val msg = ex.message.orEmpty()
+        assertTrue(msg.contains("PostgreSQL", ignoreCase = true) || msg.contains("недоступна", ignoreCase = true))
+    }
 }
 

@@ -116,6 +116,7 @@ data class CapsuleUiState(
     val deviceLon: Double? = null,
     val lockedDialogMissingText: String? = null,
     val capsulesLoadError: String? = null,
+    val isServerWakingUp: Boolean = false,
     val isRefreshingCapsules: Boolean = false,
     val createForm: CreateCapsuleFormState = CreateCapsuleFormState(),
     val searchQuery: String = "",
@@ -172,7 +173,15 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
     private val appContext = application.applicationContext
     private val locationProvider = LocationProvider(appContext)
 
-    private val remoteRepository: CapsuleRepository = RemoteCapsuleRepository()
+    private val remoteRepository: CapsuleRepository = RemoteCapsuleRepository(
+        onWakeUpStateChange = { waking ->
+            val wasWaking = _uiState.value.isServerWakingUp
+            _uiState.update { it.copy(isServerWakingUp = waking) }
+            if (waking && !wasWaking) {
+                _snackbarEvents.tryEmit(appContext.getString(R.string.server_waking_up))
+            }
+        }
+    )
 
     private val _uiState = MutableStateFlow(CapsuleUiState())
     val uiState: StateFlow<CapsuleUiState> = _uiState.asStateFlow()

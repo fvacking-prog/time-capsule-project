@@ -196,9 +196,15 @@ object AuthRateLimiter {
     }
 }
 
+internal var healthCheckFn: () -> Boolean = DatabaseConfig::isDatabaseHealthy
+
 fun Route.capsuleRoutes() {
     get("/health") {
-        call.respondText("ok")
+        if (healthCheckFn()) {
+            call.respondText("ok", status = io.ktor.http.HttpStatusCode.OK)
+        } else {
+            call.respondText("database_unavailable", status = io.ktor.http.HttpStatusCode.ServiceUnavailable)
+        }
     }
 
     route("/api/v1/auth") {

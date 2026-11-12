@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: timecapsule-postgres-dev
+    environment:
+      POSTGRES_DB: timecapsule
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_dev_pass}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d timecapsule"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: timecapsule-backend-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres_dev_pass}@postgres:5432/timecapsule?sslmode=disable
+      CAPSULE_AES_KEY: ${CAPSULE_AES_KEY:?Задайте CAPSULE_AES_KEY (./generate-aes-key.sh)}
+      GOOGLE_WEB_CLIENT_ID: ${GOOGLE_WEB_CLIENT_ID:-}
+    restart: unless-stopped
+
+volumes:
+  pg_dev_data:
+

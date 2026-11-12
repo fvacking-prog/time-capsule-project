@@ -38,6 +38,8 @@ dependencies {
     implementation("org.jetbrains.exposed:exposed-core:$exposedVersion")
     implementation("org.jetbrains.exposed:exposed-jdbc:$exposedVersion")
     implementation("com.h2database:h2:$h2Version")
+    implementation("org.postgresql:postgresql:42.7.4")
+    implementation("com.zaxxer:HikariCP:6.0.0")
     implementation("com.google.api-client:google-api-client:2.7.0")
 
     implementation("ch.qos.logback:logback-classic:$logbackVersion")

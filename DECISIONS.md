@@ -29,3 +29,11 @@
    - Новая колонка `role` имеет значение по умолчанию `MEMBER` для существующих записей в БД, при создании новых капсул создатель получает роль `CREATOR`, получатели не-гео капсул — `RECIPIENT`, участники гео-капсул — `MEMBER`.
 4. **Двойная передача получателей (`recipientHandles` + `participantIds`)**:
    - В `CreateCapsuleRequest` добавлено опциональное поле `recipientHandles: List<String> = emptyList()`, что позволяет отправлять капсулы напрямую по `@handle` (и корректно объединяется с выбранными `participantIds`, ограничиваясь максимум 10 получателями для `isGeoLocked = false`).
+
+## Фаза 4 (Постоянный сервер: PostgreSQL + HikariCP + Docker)
+1. **Обработка `DATABASE_URL` от Neon и fallback на H2**:
+   - Поддерживаются строки формата `postgresql://user:pass@host/db?sslmode=require`, `postgres://...` и готовые `jdbc:postgresql://...`; учетные данные декодируются через `URLDecoder` и передаются в `HikariConfig` отдельными `username`/`password` без включения пароля в JDBC URL. При пустой `DATABASE_URL` используется локальная файловая БД H2.
+2. **Политика повторов при холодном старте (`ColdStartRetry`)**:
+   - Клиент повторяет запрос до 3 раз с нарастающей паузой (`3 с -> 6 с -> 12 с`, таймаут попытки `15 с`) только при транзиентных сбоях пробуждения хостинга (`SocketTimeoutException`, `ConnectTimeoutException`, `HttpRequestTimeoutException`, `ConnectException`, HTTP `502/503/504`) и отображает баннер/сообщение «Сервер просыпается, подождите до минуты». Ошибки `4xx` (включая `401`) не повторяются.
+3. **Проверка PostgreSQL без запущенного Docker-демона**:
+   - Поскольку Docker Desktop на машине не запущен (зафиксировано в `BLOCKERS.md`), конфигурация `docker-compose.dev.yml`, multi-stage `backend/Dockerfile` (fatJar -> JRE 21, non-root, `HEALTHCHECK`), разбор `DATABASE_URL`, настройки пула `HikariCP` (`maxPoolSize=3`, `connectionTimeout=10_000`) и жизненный цикл `/health` проверены модульными/HTTP-тестами на H2.
