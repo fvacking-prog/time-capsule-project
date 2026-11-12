@@ -51,6 +51,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.cyberpunk.ui.components.AppUpdateDialog
 import com.example.cyberpunk.ui.components.JoinCapsuleDialog
 import com.example.cyberpunk.ui.components.ProfileSelectionDialog
 import com.example.cyberpunk.ui.components.ServerSettingsDialog
@@ -155,6 +156,23 @@ fun TimeCapsuleApp(
             errorText = uiState.pinError,
             onPinEntered = capsuleViewModel::verifyPin,
             onForgotPin = capsuleViewModel::forgotPin
+        )
+    }
+
+    val pendingUpdate = uiState.availableUpdate
+    if (uiState.showUpdateDialog && pendingUpdate != null) {
+        AppUpdateDialog(
+            update = pendingUpdate,
+            isMandatory = uiState.isMandatoryUpdate,
+            hasDownloadableApk = uiState.hasDownloadableUpdateApk,
+            isDownloading = uiState.isDownloadingUpdate,
+            progress = uiState.updateDownloadProgress,
+            isDownloadedReady = !uiState.updateDownloadedApkPath.isNullOrBlank(),
+            needsInstallPermission = uiState.needsInstallPermission,
+            errorText = uiState.updateError,
+            onUpdateClick = capsuleViewModel::startUpdateDownloadAndInstall,
+            onOpenPermissionSettings = capsuleViewModel::openInstallUnknownSourcesSettings,
+            onDismiss = capsuleViewModel::dismissUpdateDialog
         )
     }
 
@@ -596,6 +614,7 @@ fun TimeCapsuleApp(
                     onConfirmDeleteData = capsuleViewModel::deleteMyData,
                     onOpenAboutDialog = capsuleViewModel::openAboutDialog,
                     onDismissAboutDialog = capsuleViewModel::dismissAboutDialog,
+                    onCheckForUpdates = { capsuleViewModel.checkForUpdates(manual = true) },
                     onLogout = capsuleViewModel::logout
                 )
             }

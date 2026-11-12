@@ -1,5 +1,6 @@
 package com.example.cyberpunk
 
+import com.timecapsule.shared.AppVersionDto
 import com.timecapsule.shared.BlockUserRequest
 import com.timecapsule.shared.CapsuleDto
 import com.timecapsule.shared.CapsuleStageDto
@@ -145,6 +146,16 @@ class DtoSerializationTest {
         val msgEncoded = json.encodeToString(msg)
         val msgDecoded = json.decodeFromString<MessageResponse>(msgEncoded)
         assertEquals(msg, msgDecoded)
+
+        val versionDto = AppVersionDto(
+            versionCode = 5,
+            versionName = "1.2.0",
+            apkUrl = "https://github.com/user/repo/releases/latest/download/timecapsule-release.apk",
+            apkSha256 = "b".repeat(64),
+            changelog = "Обновление через GitHub Releases",
+            minSupportedVersionCode = 2
+        )
+        assertEquals(versionDto, json.decodeFromString(json.encodeToString(versionDto)))
     }
 }
 

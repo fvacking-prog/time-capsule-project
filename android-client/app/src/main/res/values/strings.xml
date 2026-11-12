@@ -321,4 +321,26 @@
     <string name="notification_unlock_body">Капсула «%1$s» достигла даты открытия</string>
     <string name="notification_inbox_unlock_body">Входящая капсула «%1$s» от @%2$s готова к открытию</string>
     <string name="server_waking_up">Сервер просыпается, подождите до минуты</string>
+
+    <!-- Phase 5: In-App Updates -->
+    <string name="settings_updates_section">Обновления приложения</string>
+    <string name="settings_current_version">Текущая версия: %1$s (%2$d)</string>
+    <string name="btn_check_updates">Проверить обновления</string>
+    <string name="checking_updates_progress">Проверка обновлений…</string>
+    <string name="update_up_to_date">Установлена актуальная версия %1$s</string>
+    <string name="update_check_failed">Не удалось проверить обновления. Попробуйте позже.</string>
+    <string name="update_dialog_title">Доступно обновление v%1$s</string>
+    <string name="update_dialog_mandatory_title">Обязательное обновление v%1$s</string>
+    <string name="update_dialog_versions">Установлена: v%1$s (%2$d) → Новая: v%3$s (%4$d)</string>
+    <string name="update_dialog_mandatory_note">Ваша версия устарела и больше не поддерживается. Обновитесь для продолжения работы.</string>
+    <string name="update_changelog_header">Что нового</string>
+    <string name="update_changelog_empty">Исправления ошибок и улучшения стабильности.</string>
+    <string name="btn_update_now">Обновить</string>
+    <string name="btn_update_later">Позже</string>
+    <string name="btn_update_install_ready">Установить</string>
+    <string name="btn_open_install_permission">Разрешить установку</string>
+    <string name="update_downloading_percent">Загрузка APK: %1$d%%</string>
+    <string name="update_downloading_indeterminate">Загрузка APK и проверка SHA-256…</string>
+    <string name="update_permission_explanation">Для установки обновления разрешите «Time Capsule» устанавливать приложения из этого источника в настройках Android, затем вернитесь в приложение.</string>
+    <string name="update_artifact_missing">Обновление v%1$s (%2$d) пока недоступно для скачивания (не задан HTTPS-адрес или SHA-256).</string>
 </resources>

@@ -3,6 +3,7 @@ package com.timecapsule.server
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
+import com.timecapsule.shared.AppVersionDto
 import com.timecapsule.shared.AuthResponse
 import com.timecapsule.shared.BlockUserRequest
 import com.timecapsule.shared.CapsuleDto
@@ -197,6 +198,7 @@ object AuthRateLimiter {
 }
 
 internal var healthCheckFn: () -> Boolean = DatabaseConfig::isDatabaseHealthy
+internal var appVersionProviderFn: () -> AppVersionDto = { AppVersionConfig.fromEnv() }
 
 fun Route.capsuleRoutes() {
     get("/health") {
@@ -205,6 +207,10 @@ fun Route.capsuleRoutes() {
         } else {
             call.respondText("database_unavailable", status = io.ktor.http.HttpStatusCode.ServiceUnavailable)
         }
+    }
+
+    get("/api/v1/app/version") {
+        call.respond(appVersionProviderFn())
     }
 
     route("/api/v1/auth") {

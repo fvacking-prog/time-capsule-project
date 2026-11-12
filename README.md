@@ -6,10 +6,12 @@
 
 ## Структура проекта
 
-- `backend/` — сервер на Kotlin 2.0.21 + Ktor 3.0.1 (Netty) + Exposed 0.56.0 + H2 в файловом режиме (`jdbc:h2:file:./data/timecapsule;DB_CLOSE_DELAY=-1`). Собирается в автономный Fat JAR (`timecapsule-server.jar`).
-- `android-client/` — Android-клиент на Kotlin 2.0.21 + Jetpack Compose (Material 3, тема Tokyo Night) + Ktor Client 3.0.1 + Credential Manager API + DataStore + Coil. Включает 5 разделов навигации («Главная», «Капсулы», «Создать», «Идеи», «Настройки»), экраны «Радар» и «Таймлайн».
-- `RELEASE.md` — релизное руководство: конфигурация `CAPSULE_AES_KEY`, сборка APK/AAB с `-PapiBaseUrl=https://...`, подпись, привязка SHA-1 в Google Cloud Console, диагностика R8 и пошаговый сценарий проверки.
-- `.env.example` — шаблон переменных окружения бэкенда (`PORT`, `H2_URL`, `CAPSULE_AES_KEY`, `GOOGLE_WEB_CLIENT_ID`).
+- `backend/` — сервер на Kotlin 2.0.21 + Ktor 3.0.1 (Netty) + Exposed 0.56.0 + HikariCP 6.0.0 (`PostgreSQL` через `DATABASE_URL` от Neon или файловая `H2` при отсутствии `DATABASE_URL`). Собирается в автономный Fat JAR (`timecapsule-server.jar`) и multi-stage Docker-образ (`backend/Dockerfile`).
+- `android-client/` — Android-клиент на Kotlin 2.0.21 + Jetpack Compose (Material 3, тема Tokyo Night) + Ktor Client 3.0.1 + Credential Manager API + DataStore + Coil + WorkManager. Включает 5 разделов навигации («Главная», «Капсулы» со вкладкой «Входящие» и бейджем, «Создать», «Идеи», «Настройки»), экраны «Выбор @handle», «Радар» и «Таймлайн».
+- `docs/index.html` — веб-страница загрузки APK для GitHub Pages в стиле Tokyo Night со ссылкой на последний GitHub Release.
+- `release.sh` — скрипт инкремента `versionCode`, сборки подписанного release APK, проверки подписи через `apksigner` и вывода `LATEST_*` переменных.
+- `RELEASE.md` — релизное руководство: конфигурация `CAPSULE_AES_KEY`, PostgreSQL/Docker, сборка APK/AAB с `-PapiBaseUrl=https://...`, подпись, привязка SHA-1 в Google Cloud Console и публикация обновлений.
+- `.env.example` — шаблон переменных окружения бэкенда (`PORT`, `DATABASE_URL`, `H2_URL`, `CAPSULE_AES_KEY`, `GOOGLE_WEB_CLIENT_ID`, `LATEST_*`).
 - `generate-aes-key.sh` — генератор случайного 32-байтного ключа AES-256 в формате Base64 для `CAPSULE_AES_KEY`.
 
 ---
@@ -120,17 +122,21 @@ keytool -list -v \
 
 ## API и авторизация
 
+- `GET /health` — проверка состояния сервера и соединения с БД (`200 ok` или `503 database_unavailable`).
+- `GET /api/v1/app/version` — публичный эндпоинт (без Bearer) актуальной версии Android-клиента (`versionCode`, `versionName`, `apkUrl` только `https://`, `apkSha256`, `changelog`, `minSupportedVersionCode`).
 - `POST /api/v1/auth/google` — принимает `GoogleAuthRequest(idToken)`, проверяет подпись, срок действия, `audience == GOOGLE_WEB_CLIENT_ID`, `issuer` и `email_verified` через `GoogleIdTokenVerifier`, создаёт/обновляет пользователя в таблице `Users`, создаёт сессию на 30 дней в таблице `Sessions` и возвращает `AuthResponse(user, sessionToken)`.
 - `GET /api/v1/me` — возвращает `UserDto` текущего авторизованного пользователя.
-- `GET /api/v1/users?query=` — поиск зарегистрированных пользователей по имени или email для приглашения в капсулу (чужие email маскируются в формате `m***a@gmail.com`; `googleSub` и чужие raw-email не возвращаются).
-- `POST /api/v1/capsules` — создание личной или гео-капсулы с шифрованием этапов AES-256-GCM. Дата каждого этапа должна быть в будущем (минимум +1 минута).
+- `GET /api/v1/users/check-handle?handle=` и `PUT /api/v1/users/me/handle` — проверка формата/занятости/зарезервированных и сохранение уникального `@handle` (`^[a-z0-9_]{4,24}$`).
+- `GET /api/v1/users?query=` — поиск до 20 пользователей (только с заданным `handle`, без самого себя) по префиксу `@handle` и имени (`email` и `googleSub` для чужих пользователей никогда не возвращаются).
+- `POST /api/v1/capsules` — создание личной, по-`@handle` (до 10 получателей при `isGeoLocked = false`, лимит 30 отправленных капсул/сутки -> `429`) или гео-капсулы с шифрованием этапов AES-256-GCM. Дата каждого этапа должна быть в будущем (минимум +1 минута).
 - `POST /api/v1/capsules/{id}/check-in` — фиксирует GPS-координаты и `lastSeenAt = now` авторизованного участника.
 - `POST /api/v1/capsules/join` — принимает `JoinCapsuleRequest(inviteCode)` и добавляет авторизованного пользователя в `CapsuleParticipants`.
 - `POST /api/v1/capsules/{id}/open` — фиксирует `openedAt = now` после выполнения всех условий (`now >= unlockDate`, а для гео-капсул ещё и нахождение всех участников в радиусе с `lastSeenAt` не старше 60 с). Возвращает `409 Conflict`, если условия ещё не выполнены.
 - `POST /api/v1/capsules/{id}/archive` / `unarchive` — управление архивом текущего пользователя.
-- `DELETE /api/v1/me/data` — полное удаление данных пользователя (созданные капсулы, участие в чужих капсулах, сессии).
+- `POST /api/v1/blocks` / `DELETE /api/v1/blocks/{userId}` / `GET /api/v1/blocks` — блокировка отправителей (блокирует получение новых капсул и скрывает входящие от заблокированного).
+- `DELETE /api/v1/me/data` — полное удаление данных пользователя (созданные капсулы, участие в чужих капсулах, блокировки, сессии).
 - `GET /api/v1/capsules` — возвращает список капсул текущего пользователя.
-- Все эндпоинты `/api/v1/capsules/*`, `/api/v1/users`, `/api/v1/me*` требуют заголовок `Authorization: Bearer <sessionToken>`.
+- Все эндпоинты `/api/v1/capsules/*`, `/api/v1/users/*`, `/api/v1/blocks*`, `/api/v1/me*` требуют заголовок `Authorization: Bearer <sessionToken>`.
 
 ---
 

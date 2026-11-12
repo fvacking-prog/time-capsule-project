@@ -1,5 +1,6 @@
 package com.timecapsule.server
 
+import com.timecapsule.shared.AppVersionDto
 import com.timecapsule.shared.AuthResponse
 import com.timecapsule.shared.BlockUserRequest
 import com.timecapsule.shared.CapsuleDto
@@ -1591,6 +1592,52 @@ class BackendUnitTests {
         }
         val msg = ex.message.orEmpty()
         assertTrue(msg.contains("PostgreSQL", ignoreCase = true) || msg.contains("недоступна", ignoreCase = true))
+    }
+
+    @Test
+    fun `GET api v1 app version is public without Bearer and enforces https-only apkUrl`() = testApplication {
+        val validSha = "a".repeat(64).uppercase()
+        val envMap = mapOf(
+            "LATEST_VERSION_CODE" to "4",
+            "LATEST_VERSION_NAME" to "1.4.0",
+            "LATEST_APK_URL" to "https://github.com/user/time-capsule/releases/download/v1.4.0/app-release.apk",
+            "LATEST_APK_SHA256" to validSha,
+            "LATEST_CHANGELOG" to "Добавлены автообновления\\nУлучшен радар",
+            "LATEST_MIN_SUPPORTED_VERSION_CODE" to "2"
+        )
+        val parsed = AppVersionConfig.fromEnv { key -> envMap[key] }
+        assertEquals(4, parsed.versionCode)
+        assertEquals("1.4.0", parsed.versionName)
+        assertEquals(
+            "https://github.com/user/time-capsule/releases/download/v1.4.0/app-release.apk",
+            parsed.apkUrl
+        )
+        assertEquals(validSha.lowercase(), parsed.apkSha256)
+        assertEquals("Добавлены автообновления\nУлучшен радар", parsed.changelog)
+        assertEquals(2, parsed.minSupportedVersionCode)
+
+        // Небезопасные URL (http://, file://, javascript:) отклоняются в пустую строку
+        assertEquals("", AppVersionConfig.sanitizeHttpsUrl("http://example.com/app.apk"))
+        assertEquals("", AppVersionConfig.sanitizeHttpsUrl("file:///tmp/app.apk"))
+        assertEquals("", AppVersionConfig.sanitizeHttpsUrl("https://evil.com/a b.apk"))
+        assertEquals("", AppVersionConfig.sanitizeSha256("not_a_sha256_hash"))
+
+        val prevProvider = appVersionProviderFn
+        appVersionProviderFn = { parsed }
+        try {
+            application {
+                installSerializationAndErrors()
+                routing { capsuleRoutes() }
+            }
+
+            // Запрос БЕЗ Authorization: Bearer должен отдавать 200 OK
+            val resp = client.get("/api/v1/app/version")
+            assertEquals(HttpStatusCode.OK, resp.status)
+            val bodyDto = Json.decodeFromString<AppVersionDto>(resp.bodyAsText())
+            assertEquals(parsed, bodyDto)
+        } finally {
+            appVersionProviderFn = prevProvider
+        }
     }
 }
 

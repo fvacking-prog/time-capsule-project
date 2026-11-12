@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Time Capsule 2.0 — Скачать для Android</title>
+    <meta name="description" content="Гео-синхронизированные капсулы времени с шифрованием AES-256-GCM и отправкой друзьям по @handle." />
+    <style>
+        :root {
+            --bg: #1A1B26;
+            --surface: #24283B;
+            --surface-variant: #2F3549;
+            --primary: #7AA2F7;
+            --secondary: #BB9AF7;
+            --accent: #7DCFFF;
+            --success: #9ECE6A;
+            --error: #F7768E;
+            --on-bg: #C0CAF5;
+            --on-surface: #A9B1D6;
+            --border: rgba(122, 162, 247, 0.22);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+            background-color: var(--bg);
+            color: var(--on-bg);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 32px 16px 48px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 720px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .card {
+            background-color: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 24px;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+        }
+
+        .badge {
+            display: inline-block;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--bg);
+            background: var(--accent);
+            padding: 4px 10px;
+            border-radius: 999px;
+            margin-bottom: 12px;
+        }
+
+        h1 {
+            margin: 0 0 8px;
+            font-size: 28px;
+            line-height: 1.25;
+            color: var(--primary);
+        }
+
+        h2 {
+            margin: 0 0 12px;
+            font-size: 18px;
+            color: var(--secondary);
+        }
+
+        p {
+            margin: 0 0 14px;
+            color: var(--on-surface);
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 18px;
+            align-items: center;
+        }
+
+        .btn-primary {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            background: var(--primary);
+            color: var(--bg);
+            font-weight: 700;
+            font-size: 16px;
+            text-decoration: none;
+            padding: 14px 24px;
+            border-radius: 14px;
+            transition: transform 0.15s ease, opacity 0.15s ease;
+        }
+
+        .btn-primary:hover {
+            opacity: 0.92;
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--border);
+            color: var(--accent);
+            font-weight: 600;
+            font-size: 14px;
+            text-decoration: none;
+            padding: 12px 18px;
+            border-radius: 14px;
+            background: var(--surface-variant);
+        }
+
+        ol {
+            margin: 0;
+            padding-left: 20px;
+            color: var(--on-surface);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        li strong {
+            color: var(--on-bg);
+        }
+
+        .highlight {
+            background: var(--bg);
+            border-left: 3px solid var(--success);
+            padding: 12px 14px;
+            border-radius: 10px;
+            font-size: 14px;
+            color: var(--on-bg);
+            margin-top: 14px;
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 12px;
+            margin-top: 8px;
+        }
+
+        .feature-item {
+            background: var(--bg);
+            border: 1px solid rgba(187, 154, 247, 0.16);
+            border-radius: 12px;
+            padding: 14px;
+        }
+
+        .feature-title {
+            font-weight: 700;
+            color: var(--accent);
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .feature-desc {
+            font-size: 13px;
+            color: var(--on-surface);
+            margin: 0;
+        }
+
+        footer {
+            font-size: 12px;
+            color: var(--on-surface);
+            text-align: center;
+            opacity: 0.8;
+        }
+
+        code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            background: var(--surface-variant);
+            color: var(--accent);
+            padding: 2px 6px;
+            border-radius: 6px;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <main class="container">
+        <section class="card">
+            <span class="badge">Android 9+ • AES-256-GCM</span>
+            <h1>Time Capsule 2.0</h1>
+            <p>
+                Гео-синхронизированные капсулы времени с поэтапной разблокировкой,
+                авторизацией через Google и отправкой посланий друзьям по <code>@handle</code>.
+                Текст запечатанных этапов остаётся зашифрованным до наступления точной даты и времени открытия.
+            </p>
+
+            <!-- При необходимости укажите ваш GitHub OWNER/REPO вручную вместо OWNER/time-capsule-project -->
+            <div class="actions">
+                <a
+                    id="download-btn"
+                    class="btn-primary"
+                    href="https://github.com/OWNER/time-capsule-project/releases/latest/download/timecapsule-release.apk"
+                >
+                    Скачать для Android
+                </a>
+                <a
+                    id="releases-link"
+                    class="btn-secondary"
+                    href="https://github.com/OWNER/time-capsule-project/releases/latest"
+                >
+                    Все релизы на GitHub
+                </a>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Как установить APK на Android</h2>
+            <ol>
+                <li>Нажмите кнопку <strong>«Скачать для Android»</strong> выше, чтобы загрузить актуальный подписанный файл <code>timecapsule-release.apk</code>.</li>
+                <li>Откройте загруженный APK из уведомлений браузера или приложения «Файлы».</li>
+                <li>Когда система Android спросит о безопасности, <strong>разрешите установку из этого источника</strong> (переключатель <em>«Разрешить установку из этого источника»</em> для вашего браузера или файлового менеджера).</li>
+                <li>Нажмите <strong>«Установить»</strong>, откройте приложение и войдите через Google-аккаунт.</li>
+            </ol>
+            <div class="highlight">
+                Внутри приложения в разделе <strong>«Настройки → Проверить обновления»</strong> также работает автообновление с обязательной проверкой контрольной суммы <code>SHA-256</code> перед установкой.
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Основные возможности</h2>
+            <div class="features">
+                <div class="feature-item">
+                    <div class="feature-title">Капсулы по @handle</div>
+                    <p class="feature-desc">Отправляйте письма и подборки до 10 получателям с вкладкой «Входящие» и защитой от спама.</p>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-title">Гео-синхронизация</div>
+                    <p class="feature-desc">Совместный радар: все участники должны присутствовать в заданной точке к дате открытия.</p>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-title">Криптозащита</div>
+                    <p class="feature-desc">Каждый этап шифруется на сервере алгоритмом AES-256-GCM до наступления времени X.</p>
+                </div>
+            </div>
+        </section>
+
+        <footer>
+            Time Capsule 2.0 • Публикация APK через GitHub Releases • Пакет <code>com.example.cyberpunk</code>
+        </footer>
+    </main>
+
+    <script>
+        (function () {
+            var host = window.location.hostname || "";
+            if (!host.endsWith(".github.io")) return;
+            var owner = host.split(".")[0];
+            var pathParts = window.location.pathname.split("/").filter(Boolean);
+            if (!owner || pathParts.length === 0) return;
+            var repo = pathParts[0];
+            var releaseBase = "https://github.com/" + owner + "/" + repo + "/releases/latest";
+            var dl = document.getElementById("download-btn");
+            var rel = document.getElementById("releases-link");
+            if (dl) dl.href = releaseBase + "/download/timecapsule-release.apk";
+            if (rel) rel.href = releaseBase;
+        })();
+    </script>
+</body>
+</html>
+

@@ -108,3 +108,18 @@ adb install android-client/app/build/outputs/apk/release/app-release.apk
 
 - Для быстрого тестирования временной блокировки в разделе **«Создать»** используйте кнопки выбора даты и **выбора времени (`TimePicker`)**: минимально допустимое время открытия — **+1 минута** от текущего момента.
 - Сетевые политики релиза гарантируются конфигурацией [network_security_config.xml](file:///Users/ghost/time-capsule-project/android-client/app/src/main/res/xml/network_security_config.xml) (`cleartextTrafficPermitted="false"`) и манифестом [AndroidManifest.xml](file:///Users/ghost/time-capsule-project/android-client/app/src/main/AndroidManifest.xml) (`android:usesCleartextTraffic="false"`), тогда как cleartext для эмулятора/LAN изолирован в `android-client/app/src/debug/`.
+
+---
+
+## 6. Постоянный сервер (PostgreSQL + `backend/Dockerfile`) и релиз обновлений (`release.sh`)
+
+1. **PostgreSQL (Neon) и локальный `docker-compose.dev.yml`**:
+   - Переменная `DATABASE_URL` формата `postgresql://user:pass@host/db?sslmode=require` автоматически преобразуется в `jdbc:postgresql://host/db?sslmode=require` с пулом `HikariCP` (`maxPoolSize = 3`, `connectionTimeout = 10 s`). Без `DATABASE_URL` используется файловая H2.
+   - Multi-stage образ `backend/Dockerfile` собирает Fat JAR и запускается под непривилегированным пользователем на JRE 21 с `HEALTHCHECK` на `/health`.
+2. **Публикация APK в GitHub Releases и автообновление**:
+   ```bash
+   ./release.sh https://ваш-сервер.onrender.com owner/time-capsule-project
+   ```
+   Скрипт поднимает `versionCode`, собирает подписанный `release` APK, проверяет подпись через `apksigner verify --verbose --print-certs` и печатает готовые `LATEST_VERSION_CODE`, `LATEST_VERSION_NAME`, `LATEST_APK_URL`, `LATEST_APK_SHA256` для переменных окружения сервера (`/api/v1/app/version`).
+   - В приложении работает проверка обновлений с проверкой `SHA-256` скачанного APK и установкой через `FileProvider` + `ACTION_MANAGE_UNKNOWN_APP_SOURCES`.
+   - Веб-страница раздачи находится в [docs/index.html](file:///Users/ghost/time-capsule-project/docs/index.html) (для GitHub Pages).

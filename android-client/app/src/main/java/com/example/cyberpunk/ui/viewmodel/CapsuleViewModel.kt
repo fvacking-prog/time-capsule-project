@@ -10,6 +10,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.cyberpunk.BuildConfig
 import com.example.cyberpunk.R
 import com.example.cyberpunk.data.ApiConfig
+import com.example.cyberpunk.data.AppUpdateManager
+import com.example.cyberpunk.data.AppUpdatePolicy
 import com.example.cyberpunk.data.CapsuleRepository
 import com.example.cyberpunk.data.CapsuleUnlockScheduler
 import com.example.cyberpunk.data.GeoHelper
@@ -19,7 +21,9 @@ import com.example.cyberpunk.data.LocationProvider
 import com.example.cyberpunk.data.RemoteCapsuleRepository
 import com.example.cyberpunk.data.SessionExpiredException
 import com.example.cyberpunk.data.UnlockDateTimeHelper
+import com.example.cyberpunk.data.UpdateRequirement
 import com.example.cyberpunk.data.UserPreferences
+import com.timecapsule.shared.AppVersionDto
 import com.timecapsule.shared.CapsuleDto
 import com.timecapsule.shared.CheckInRequest
 import com.timecapsule.shared.CreateCapsuleRequest
@@ -27,6 +31,7 @@ import com.timecapsule.shared.CreateStageRequest
 import com.timecapsule.shared.UserDto
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -38,6 +43,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
@@ -131,7 +138,17 @@ data class CapsuleUiState(
     val showConfirmDeleteDataDialog: Boolean = false,
     val showAboutDialog: Boolean = false,
     val aboutDialogType: String = "ABOUT",
-    val isDeletingData: Boolean = false
+    val isDeletingData: Boolean = false,
+    val isCheckingUpdates: Boolean = false,
+    val availableUpdate: AppVersionDto? = null,
+    val showUpdateDialog: Boolean = false,
+    val isMandatoryUpdate: Boolean = false,
+    val hasDownloadableUpdateApk: Boolean = false,
+    val isDownloadingUpdate: Boolean = false,
+    val updateDownloadProgress: Float? = null,
+    val updateDownloadedApkPath: String? = null,
+    val needsInstallPermission: Boolean = false,
+    val updateError: String? = null
 ) {
     val selectedCapsule: CapsuleDto?
         get() = capsules.find { it.id == selectedCapsuleId } ?: capsules.firstOrNull()
@@ -199,10 +216,12 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
     private var userSearchJob: Job? = null
     private var recipientSearchJob: Job? = null
     private var handleCheckJob: Job? = null
+    private var waitingForInstallPermission: Boolean = false
 
     init {
         ApiConfig.init(appContext)
         _uiState.update { it.copy(settingsUrlInput = ApiConfig.BASE_URL) }
+        checkForUpdates(manual = false)
 
         viewModelScope.launch {
             val hasPin = UserPreferences.hasPinFlow(appContext).first()
@@ -1343,6 +1362,223 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         }
         if (current.isAuthenticated && !current.currentUserHandle.isNullOrBlank()) {
             loadCapsules(isPullToRefresh = false)
+        }
+        resumePendingApkInstallIfGranted()
+    }
+
+    // --- App Updates (Phase 5) ---
+    fun checkForUpdates(manual: Boolean) {
+        val current = _uiState.value
+        if (current.isCheckingUpdates || current.isDownloadingUpdate) return
+
+        viewModelScope.launch {
+            if (manual) {
+                _uiState.update { it.copy(isCheckingUpdates = true) }
+            }
+            try {
+                val info = AppUpdateManager.fetchLatestVersion(ApiConfig.BASE_URL)
+                val evaluation = AppUpdatePolicy.evaluate(info, BuildConfig.VERSION_CODE)
+                when (evaluation.requirement) {
+                    UpdateRequirement.OPTIONAL,
+                    UpdateRequirement.MANDATORY -> {
+                        val missingArtifactMsg = if (!evaluation.hasDownloadableApk) {
+                            appContext.getString(R.string.update_artifact_missing, info.versionName, info.versionCode)
+                        } else {
+                            null
+                        }
+                        _uiState.update { state ->
+                            val sameTarget = state.availableUpdate?.versionCode == info.versionCode
+                            state.copy(
+                                isCheckingUpdates = false,
+                                availableUpdate = info,
+                                showUpdateDialog = true,
+                                isMandatoryUpdate = evaluation.isMandatory,
+                                hasDownloadableUpdateApk = evaluation.hasDownloadableApk,
+                                updateDownloadedApkPath = if (sameTarget) state.updateDownloadedApkPath else null,
+                                needsInstallPermission = if (sameTarget) state.needsInstallPermission else false,
+                                updateError = missingArtifactMsg
+                            )
+                        }
+                    }
+
+                    UpdateRequirement.INVALID_METADATA -> {
+                        _uiState.update { it.copy(isCheckingUpdates = false) }
+                        if (manual) {
+                            _snackbarEvents.tryEmit(
+                                appContext.getString(R.string.update_artifact_missing, info.versionName, info.versionCode)
+                            )
+                        }
+                    }
+
+                    UpdateRequirement.UP_TO_DATE -> {
+                        _uiState.update { state ->
+                            state.copy(
+                                isCheckingUpdates = false,
+                                availableUpdate = null,
+                                showUpdateDialog = false,
+                                isMandatoryUpdate = false,
+                                hasDownloadableUpdateApk = false,
+                                updateDownloadedApkPath = null,
+                                needsInstallPermission = false,
+                                updateError = null
+                            )
+                        }
+                        if (manual) {
+                            _snackbarEvents.tryEmit(
+                                appContext.getString(R.string.update_up_to_date, BuildConfig.VERSION_NAME)
+                            )
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+                _uiState.update { it.copy(isCheckingUpdates = false) }
+                if (manual) {
+                    _snackbarEvents.tryEmit(appContext.getString(R.string.update_check_failed))
+                }
+            }
+        }
+    }
+
+    fun dismissUpdateDialog() {
+        val current = _uiState.value
+        if (current.isMandatoryUpdate || current.isDownloadingUpdate) return
+        _uiState.update { it.copy(showUpdateDialog = false, updateError = null) }
+    }
+
+    fun openInstallUnknownSourcesSettings() {
+        waitingForInstallPermission = true
+        val opened = AppUpdateManager.openUnknownSourcesSettings(appContext)
+        if (!opened) {
+            waitingForInstallPermission = false
+            _uiState.update {
+                it.copy(updateError = "Не удалось открыть системные настройки разрешений.")
+            }
+        }
+    }
+
+    fun startUpdateDownloadAndInstall() {
+        val state = _uiState.value
+        val update = state.availableUpdate ?: return
+        if (state.isDownloadingUpdate || !state.hasDownloadableUpdateApk) return
+
+        val existingPath = state.updateDownloadedApkPath
+        if (!existingPath.isNullOrBlank()) {
+            viewModelScope.launch {
+                val apkFile = File(existingPath)
+                val valid = withContext(Dispatchers.IO) {
+                    AppUpdatePolicy.verifyApkSha256AndCleanup(apkFile, update.apkSha256)
+                }
+                if (valid) {
+                    proceedToInstallVerifiedApk(apkFile)
+                    return@launch
+                } else {
+                    _uiState.update {
+                        it.copy(updateDownloadedApkPath = null, needsInstallPermission = false)
+                    }
+                    launchApkDownloadAndInstall(update)
+                }
+            }
+            return
+        }
+
+        launchApkDownloadAndInstall(update)
+    }
+
+    private fun launchApkDownloadAndInstall(update: AppVersionDto) {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isDownloadingUpdate = true,
+                    updateDownloadProgress = 0f,
+                    updateDownloadedApkPath = null,
+                    needsInstallPermission = false,
+                    updateError = null
+                )
+            }
+            try {
+                val apkFile = AppUpdateManager.downloadAndVerifyApk(
+                    context = appContext,
+                    versionInfo = update,
+                    onProgress = { fraction ->
+                        _uiState.update { it.copy(updateDownloadProgress = fraction) }
+                    }
+                )
+                _uiState.update {
+                    it.copy(
+                        isDownloadingUpdate = false,
+                        updateDownloadProgress = 1f,
+                        updateDownloadedApkPath = apkFile.absolutePath,
+                        updateError = null
+                    )
+                }
+                proceedToInstallVerifiedApk(apkFile)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                AppUpdateManager.cleanupUpdateCache(appContext)
+                _uiState.update {
+                    it.copy(
+                        isDownloadingUpdate = false,
+                        updateDownloadProgress = null,
+                        updateDownloadedApkPath = null,
+                        needsInstallPermission = false,
+                        updateError = t.localizedMessage ?: t.message ?: appContext.getString(R.string.update_check_failed)
+                    )
+                }
+            }
+        }
+    }
+
+    private fun proceedToInstallVerifiedApk(apkFile: File) {
+        if (!AppUpdateManager.canInstallPackages(appContext)) {
+            waitingForInstallPermission = true
+            _uiState.update {
+                it.copy(needsInstallPermission = true, updateError = null)
+            }
+            AppUpdateManager.openUnknownSourcesSettings(appContext)
+            return
+        }
+        waitingForInstallPermission = false
+        val result = AppUpdateManager.launchInstaller(appContext, apkFile)
+        if (result.isFailure) {
+            _uiState.update {
+                it.copy(
+                    updateError = result.exceptionOrNull()?.localizedMessage
+                        ?: "Не удалось запустить установщик Android."
+                )
+            }
+        } else {
+            _uiState.update { it.copy(needsInstallPermission = false, updateError = null) }
+        }
+    }
+
+    private fun resumePendingApkInstallIfGranted() {
+        if (!waitingForInstallPermission) return
+        waitingForInstallPermission = false
+        val current = _uiState.value
+        val path = current.updateDownloadedApkPath ?: return
+        val update = current.availableUpdate ?: return
+        if (!AppUpdateManager.canInstallPackages(appContext)) return
+
+        viewModelScope.launch {
+            val file = File(path)
+            val valid = withContext(Dispatchers.IO) {
+                AppUpdatePolicy.verifyApkSha256AndCleanup(file, update.apkSha256)
+            }
+            if (valid) {
+                _uiState.update { it.copy(needsInstallPermission = false, updateError = null) }
+                proceedToInstallVerifiedApk(file)
+            } else {
+                _uiState.update {
+                    it.copy(
+                        updateDownloadedApkPath = null,
+                        needsInstallPermission = false,
+                        updateError = "Контрольная сумма APK не подтверждена. Повторите загрузку."
+                    )
+                }
+            }
         }
     }
 

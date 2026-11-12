@@ -15,8 +15,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -29,13 +31,17 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.window.DialogProperties
+import com.timecapsule.shared.AppVersionDto
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -423,6 +429,205 @@ fun JoinCapsuleDialog(
                     text = stringResource(R.string.btn_cancel),
                     color = TokyoOnSurface
                 )
+            }
+        }
+    )
+}
+
+@Composable
+fun AppUpdateDialog(
+    update: AppVersionDto,
+    isMandatory: Boolean,
+    hasDownloadableApk: Boolean,
+    isDownloading: Boolean,
+    progress: Float?,
+    isDownloadedReady: Boolean,
+    needsInstallPermission: Boolean,
+    errorText: String?,
+    onUpdateClick: () -> Unit,
+    onOpenPermissionSettings: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val canDismiss = !isMandatory && !isDownloading
+    AlertDialog(
+        onDismissRequest = {
+            if (canDismiss) onDismiss()
+        },
+        properties = DialogProperties(
+            dismissOnBackPress = canDismiss,
+            dismissOnClickOutside = canDismiss
+        ),
+        containerColor = TokyoSurface,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SystemUpdate,
+                    contentDescription = null,
+                    tint = if (isMandatory) TokyoError else TokyoPrimary
+                )
+                Text(
+                    text = if (isMandatory) {
+                        stringResource(R.string.update_dialog_mandatory_title, update.versionName)
+                    } else {
+                        stringResource(R.string.update_dialog_title, update.versionName)
+                    },
+                    color = if (isMandatory) TokyoError else TokyoPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = stringResource(
+                        R.string.update_dialog_versions,
+                        BuildConfig.VERSION_NAME,
+                        BuildConfig.VERSION_CODE,
+                        update.versionName,
+                        update.versionCode
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TokyoAccent,
+                    fontWeight = FontWeight.Medium
+                )
+
+                if (isMandatory) {
+                    Text(
+                        text = stringResource(R.string.update_dialog_mandatory_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TokyoError
+                    )
+                }
+
+                Text(
+                    text = stringResource(R.string.update_changelog_header),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = TokyoOnBackground,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Surface(
+                    color = TokyoBackground,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = update.changelog.ifBlank { stringResource(R.string.update_changelog_empty) },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TokyoOnSurface,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+
+                if (isDownloading) {
+                    val p = progress
+                    if (p != null) {
+                        LinearProgressIndicator(
+                            progress = { p.coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth(),
+                            color = TokyoPrimary,
+                            trackColor = TokyoBackground
+                        )
+                        Text(
+                            text = stringResource(R.string.update_downloading_percent, (p * 100).toInt().coerceIn(0, 100)),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TokyoAccent
+                        )
+                    } else {
+                        LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = TokyoPrimary,
+                            trackColor = TokyoBackground
+                        )
+                        Text(
+                            text = stringResource(R.string.update_downloading_indeterminate),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TokyoAccent
+                        )
+                    }
+                }
+
+                if (needsInstallPermission) {
+                    Surface(
+                        color = TokyoBackground,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, TokyoSecondary.copy(alpha = 0.6f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.update_permission_explanation),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TokyoOnBackground
+                            )
+                            OutlinedButton(
+                                onClick = onOpenPermissionSettings,
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = TokyoSecondary),
+                                border = BorderStroke(1.dp, TokyoSecondary),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text(stringResource(R.string.btn_open_install_permission))
+                            }
+                        }
+                    }
+                }
+
+                if (!errorText.isNullOrBlank()) {
+                    Text(
+                        text = errorText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TokyoError
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            if (hasDownloadableApk) {
+                Button(
+                    onClick = onUpdateClick,
+                    enabled = !isDownloading,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isMandatory) TokyoError else TokyoPrimary,
+                        contentColor = TokyoBackground
+                    )
+                ) {
+                    if (isDownloading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = TokyoBackground
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Download,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isDownloadedReady) {
+                            stringResource(R.string.btn_update_install_ready)
+                        } else {
+                            stringResource(R.string.btn_update_now)
+                        }
+                    )
+                }
+            }
+        },
+        dismissButton = {
+            if (canDismiss) {
+                TextButton(onClick = onDismiss) {
+                    Text(
+                        text = stringResource(R.string.btn_update_later),
+                        color = TokyoOnSurface
+                    )
+                }
             }
         }
     )

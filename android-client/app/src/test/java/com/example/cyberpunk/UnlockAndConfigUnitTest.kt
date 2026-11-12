@@ -1,10 +1,14 @@
 package com.example.cyberpunk
 
 import com.example.cyberpunk.data.ApiConfig
+import com.example.cyberpunk.data.AppUpdatePolicy
 import com.example.cyberpunk.data.CapsuleUnlockScheduler
 import com.example.cyberpunk.data.ColdStartRetry
 import com.example.cyberpunk.data.GeoHelper
 import com.example.cyberpunk.data.SessionExpiredException
+import com.example.cyberpunk.data.UpdateRequirement
+import com.timecapsule.shared.AppVersionDto
+import java.io.File
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import kotlinx.coroutines.runBlocking
@@ -227,6 +231,56 @@ class UnlockAndConfigUnitTest {
         }
         assertEquals(1, nonRetryCalls)
         assertTrue(nonRetryDelays.isEmpty())
+    }
+
+    @Test
+    fun `AppUpdatePolicy enforces https url, verifies SHA-256 deleting mismatched APK, and marks mandatory updates`() {
+        assertTrue(AppUpdatePolicy.isHttpsUrlSafe("https://github.com/org/repo/releases/download/v2/app.apk"))
+        assertFalse(AppUpdatePolicy.isHttpsUrlSafe("http://github.com/org/repo/app.apk"))
+        assertFalse(AppUpdatePolicy.isHttpsUrlSafe("file:///sdcard/app.apk"))
+        assertFalse(AppUpdatePolicy.isHttpsUrlSafe(""))
+
+        val tmpFile = File.createTempFile("timecapsule_apk_test", ".apk")
+        try {
+            tmpFile.writeBytes("fake-apk-payload-v2".toByteArray())
+            val validSha = AppUpdatePolicy.computeSha256Hex(tmpFile)
+            assertEquals(64, validSha.length)
+            assertTrue(AppUpdatePolicy.isValidSha256Hex(validSha))
+
+            // Matching hash preserves file
+            assertTrue(AppUpdatePolicy.verifyApkSha256AndCleanup(tmpFile, validSha.uppercase()))
+            assertTrue(tmpFile.exists())
+
+            // Mismatched hash MUST delete file and return false
+            val wrongSha = "0".repeat(64)
+            assertFalse(AppUpdatePolicy.verifyApkSha256AndCleanup(tmpFile, wrongSha))
+            assertFalse(tmpFile.exists())
+        } finally {
+            tmpFile.delete()
+        }
+
+        val optionalInfo = AppVersionDto(
+            versionCode = 2,
+            versionName = "1.1.0",
+            apkUrl = "https://github.com/org/repo/releases/latest/download/timecapsule-release.apk",
+            apkSha256 = "c".repeat(64),
+            changelog = "Bugfixes",
+            minSupportedVersionCode = 1
+        )
+        val optEval = AppUpdatePolicy.evaluate(optionalInfo, currentVersionCode = 1)
+        assertEquals(UpdateRequirement.OPTIONAL, optEval.requirement)
+        assertFalse(optEval.isMandatory)
+        assertTrue(optEval.hasDownloadableApk)
+
+        val mandatoryInfo = optionalInfo.copy(versionCode = 3, minSupportedVersionCode = 2)
+        val mandEval = AppUpdatePolicy.evaluate(mandatoryInfo, currentVersionCode = 1)
+        assertEquals(UpdateRequirement.MANDATORY, mandEval.requirement)
+        assertTrue(mandEval.isMandatory)
+        assertTrue(mandEval.hasDownloadableApk)
+
+        val upToDateEval = AppUpdatePolicy.evaluate(optionalInfo.copy(versionCode = 1), currentVersionCode = 1)
+        assertEquals(UpdateRequirement.UP_TO_DATE, upToDateEval.requirement)
+        assertFalse(upToDateEval.isMandatory)
     }
 }
 

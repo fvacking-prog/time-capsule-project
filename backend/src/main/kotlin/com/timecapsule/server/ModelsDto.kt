@@ -129,3 +129,13 @@ data class JoinCapsuleRequest(
 data class MessageResponse(
     val message: String
 )
+
+@Serializable
+data class AppVersionDto(
+    val versionCode: Int,
+    val versionName: String,
+    val apkUrl: String,
+    val apkSha256: String,
+    val changelog: String = "",
+    val minSupportedVersionCode: Int = 1
+)

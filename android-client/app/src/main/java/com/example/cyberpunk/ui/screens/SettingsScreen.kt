@@ -32,11 +32,13 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Policy
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -81,6 +83,7 @@ fun SettingsScreen(
     onConfirmDeleteData: () -> Unit,
     onOpenAboutDialog: (String) -> Unit,
     onDismissAboutDialog: () -> Unit,
+    onCheckForUpdates: () -> Unit,
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
@@ -473,6 +476,69 @@ fun SettingsScreen(
                             style = MaterialTheme.typography.bodySmall.copy(color = TokyoOnSurface)
                         )
                     }
+                    Icon(Icons.Default.ChevronRight, null, tint = TokyoOnSurface)
+                }
+            }
+        }
+
+        // БЛОК: ОБНОВЛЕНИЯ ПРИЛОЖЕНИЯ
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = TokyoSurface),
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.settings_updates_section),
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = TokyoPrimary
+                    )
+                )
+
+                Text(
+                    text = stringResource(
+                        R.string.settings_current_version,
+                        BuildConfig.VERSION_NAME,
+                        BuildConfig.VERSION_CODE
+                    ),
+                    style = MaterialTheme.typography.bodySmall.copy(color = TokyoOnSurface)
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = !uiState.isCheckingUpdates) { onCheckForUpdates() }
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (uiState.isCheckingUpdates) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = TokyoAccent
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.SystemUpdate,
+                            contentDescription = null,
+                            tint = TokyoAccent,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Text(
+                        text = if (uiState.isCheckingUpdates) {
+                            stringResource(R.string.checking_updates_progress)
+                        } else {
+                            stringResource(R.string.btn_check_updates)
+                        },
+                        style = MaterialTheme.typography.bodyMedium.copy(color = TokyoOnBackground),
+                        modifier = Modifier.weight(1f)
+                    )
                     Icon(Icons.Default.ChevronRight, null, tint = TokyoOnSurface)
                 }
             }
