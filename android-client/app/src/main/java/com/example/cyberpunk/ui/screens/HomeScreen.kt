@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import com.example.cyberpunk.R
 import com.example.cyberpunk.ui.theme.TokyoAccent
 import com.example.cyberpunk.ui.theme.TokyoBackground
+import com.example.cyberpunk.ui.theme.TokyoBorderGradient
 import com.example.cyberpunk.ui.theme.TokyoOnBackground
 import com.example.cyberpunk.ui.theme.TokyoOnSurface
 import com.example.cyberpunk.ui.theme.TokyoPrimary
@@ -121,7 +122,7 @@ fun HomeScreen(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .border(1.dp, TokyoPrimary.copy(alpha = 0.35f), RoundedCornerShape(20.dp)),
+                .border(1.dp, TokyoBorderGradient, RoundedCornerShape(20.dp)),
             colors = CardDefaults.cardColors(containerColor = TokyoSurface),
             shape = RoundedCornerShape(20.dp)
         ) {
@@ -199,7 +200,7 @@ fun HomeScreen(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .border(1.dp, TokyoSecondary.copy(alpha = 0.3f), RoundedCornerShape(20.dp)),
+                .border(1.dp, TokyoBorderGradient, RoundedCornerShape(20.dp)),
             colors = CardDefaults.cardColors(containerColor = TokyoSurface),
             shape = RoundedCornerShape(20.dp)
         ) {

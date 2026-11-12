@@ -65,6 +65,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
@@ -77,6 +78,7 @@ import androidx.compose.ui.unit.sp
 import com.example.cyberpunk.R
 import com.example.cyberpunk.ui.theme.TokyoAccent
 import com.example.cyberpunk.ui.theme.TokyoBackground
+import com.example.cyberpunk.ui.theme.TokyoBorderGradient
 import com.example.cyberpunk.ui.theme.TokyoError
 import com.example.cyberpunk.ui.theme.TokyoOnBackground
 import com.example.cyberpunk.ui.theme.TokyoOnSurface
@@ -382,7 +384,11 @@ private fun ShelfCapsuleCard(
                     else -> onOpenTimeline()
                 }
             }
-            .border(1.dp, statusColor.copy(alpha = 0.35f), RoundedCornerShape(18.dp)),
+            .border(
+                width = 1.dp,
+                brush = if (isReady) TokyoBorderGradient else Brush.linearGradient(listOf(statusColor.copy(alpha = 0.35f), statusColor.copy(alpha = 0.35f))),
+                shape = RoundedCornerShape(18.dp)
+            ),
         colors = CardDefaults.cardColors(containerColor = TokyoSurface),
         shape = RoundedCornerShape(18.dp)
     ) {

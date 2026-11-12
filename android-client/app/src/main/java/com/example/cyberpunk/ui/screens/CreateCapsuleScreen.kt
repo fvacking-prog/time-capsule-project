@@ -109,12 +109,21 @@ import com.example.cyberpunk.data.VoicePlayerHelper
 import com.example.cyberpunk.data.VoiceRecorderHelper
 import kotlinx.coroutines.delay
 import java.io.File
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import com.example.cyberpunk.ui.theme.TokyoAccent
 import com.example.cyberpunk.ui.theme.TokyoBackground
+import com.example.cyberpunk.ui.theme.TokyoBorderGradient
+import com.example.cyberpunk.ui.theme.TokyoDeep
 import com.example.cyberpunk.ui.theme.TokyoError
+import com.example.cyberpunk.ui.theme.TokyoNight
 import com.example.cyberpunk.ui.theme.TokyoOnBackground
 import com.example.cyberpunk.ui.theme.TokyoOnSurface
 import com.example.cyberpunk.ui.theme.TokyoPrimary
+import com.example.cyberpunk.ui.theme.TokyoPrimaryGradient
 import com.example.cyberpunk.ui.theme.TokyoSecondary
 import com.example.cyberpunk.ui.theme.TokyoSuccess
 import com.example.cyberpunk.ui.theme.TokyoSurface
@@ -527,13 +536,15 @@ fun CreateCapsuleScreen(
 
         // ШАГ 1: ТИП КАПСУЛЫ
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, TokyoBorderGradient, RoundedCornerShape(18.dp)),
             colors = CardDefaults.cardColors(containerColor = TokyoSurface),
             shape = RoundedCornerShape(18.dp)
         ) {
             Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
                     text = stringResource(R.string.create_step_type),
@@ -543,60 +554,23 @@ fun CreateCapsuleScreen(
                     )
                 )
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Сообщение (Active)
-                    FilterChip(
-                        selected = formState.kind == "MESSAGE",
-                        onClick = { onKindChange("MESSAGE") },
-                        label = { Text(stringResource(R.string.type_message)) },
-                        leadingIcon = { Icon(Icons.Default.TextFields, null, modifier = Modifier.size(16.dp)) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = TokyoPrimary.copy(alpha = 0.2f),
-                            selectedLabelColor = TokyoPrimary,
-                            selectedLeadingIconColor = TokyoPrimary
-                        )
-                    )
-
-                    // Фото (Active)
-                    FilterChip(
-                        selected = formState.kind == "PHOTO",
-                        onClick = { onKindChange("PHOTO") },
-                        label = { Text(stringResource(R.string.type_photo)) },
-                        leadingIcon = { Icon(Icons.Default.PhotoCamera, null, modifier = Modifier.size(16.dp)) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = TokyoPrimary.copy(alpha = 0.2f),
-                            selectedLabelColor = TokyoPrimary,
-                            selectedLeadingIconColor = TokyoPrimary
-                        )
-                    )
-
-                    // Голос (Active)
-                    FilterChip(
-                        selected = formState.kind == "VOICE",
-                        onClick = { onKindChange("VOICE") },
-                        label = { Text(stringResource(R.string.type_voice)) },
-                        leadingIcon = { Icon(Icons.Default.Mic, null, modifier = Modifier.size(16.dp)) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = TokyoPrimary.copy(alpha = 0.2f),
-                            selectedLabelColor = TokyoPrimary,
-                            selectedLeadingIconColor = TokyoPrimary
-                        )
-                    )
-                }
+                CapsuleTypeSegmentedSwitch(
+                    selectedKind = formState.kind,
+                    onKindChange = onKindChange
+                )
             }
         }
 
         // ШАГ 2: СОДЕРЖИМОЕ
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, TokyoBorderGradient, RoundedCornerShape(18.dp)),
             colors = CardDefaults.cardColors(containerColor = TokyoSurface),
             shape = RoundedCornerShape(18.dp)
         ) {
             Column(
-                modifier = Modifier.padding(16.dp),
+                modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
@@ -1107,12 +1081,14 @@ fun CreateCapsuleScreen(
 
         // ШАГ 3: ДАТА ОТКРЫТИЯ
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, TokyoBorderGradient, RoundedCornerShape(18.dp)),
             colors = CardDefaults.cardColors(containerColor = TokyoSurface),
             shape = RoundedCornerShape(18.dp)
         ) {
             Column(
-                modifier = Modifier.padding(16.dp),
+                modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
@@ -1213,12 +1189,18 @@ fun CreateCapsuleScreen(
 
         // ПЕРЕКЛЮЧАТЕЛЬ: Открыть только на месте (гео + друзья)
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(
+                    width = 1.dp,
+                    brush = if (formState.isGeoLocked) TokyoBorderGradient else Brush.linearGradient(listOf(TokyoNight, TokyoNight)),
+                    shape = RoundedCornerShape(18.dp)
+                ),
             colors = CardDefaults.cardColors(containerColor = TokyoSurface),
             shape = RoundedCornerShape(18.dp)
         ) {
             Column(
-                modifier = Modifier.padding(16.dp),
+                modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Row(
@@ -1461,32 +1443,149 @@ fun CreateCapsuleScreen(
             }
         }
 
-        // Кнопка: Запечатать капсулу
-        Button(
-            onClick = onOpenConfirmDialog,
-            enabled = !formState.isSubmitting,
+        // Кнопка: Запечатать капсулу с градиентом #7AA2F7 → #BB9AF7
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = TokyoPrimary,
-                contentColor = TokyoBackground
-            ),
-            shape = RoundedCornerShape(14.dp)
+                .height(54.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(
+                    if (formState.isSubmitting) {
+                        Brush.horizontalGradient(
+                            listOf(
+                                TokyoPrimary.copy(alpha = 0.6f),
+                                TokyoSecondary.copy(alpha = 0.6f)
+                            )
+                        )
+                    } else {
+                        TokyoPrimaryGradient
+                    }
+                )
+                .then(
+                    if (!formState.isSubmitting) {
+                        Modifier.clickable(onClick = onOpenConfirmDialog)
+                    } else {
+                        Modifier
+                    }
+                ),
+            contentAlignment = Alignment.Center
         ) {
-            if (formState.isSubmitting) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(22.dp),
-                    color = TokyoBackground,
-                    strokeWidth = 2.dp
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            ) {
+                if (formState.isSubmitting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        color = TokyoDeep,
+                        strokeWidth = 2.5.dp
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = stringResource(R.string.btn_seal_capsule),
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = TokyoDeep
+                        )
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = TokyoDeep
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = stringResource(R.string.btn_seal_capsule),
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = TokyoDeep
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CapsuleTypeSegmentedSwitch(
+    selectedKind: String,
+    onKindChange: (String) -> Unit
+) {
+    val items = listOf(
+        Triple("MESSAGE", stringResource(R.string.type_message), Icons.Default.TextFields),
+        Triple("PHOTO", stringResource(R.string.type_photo), Icons.Default.PhotoCamera),
+        Triple("VOICE", stringResource(R.string.type_voice), Icons.Default.Mic)
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(TokyoNight)
+            .border(1.dp, TokyoSurface, RoundedCornerShape(14.dp))
+            .padding(4.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            items.forEach { (kind, label, icon) ->
+                val isSelected = selectedKind == kind
+
+                val animatedBgColor by animateColorAsState(
+                    targetValue = if (isSelected) TokyoSurface else Color.Transparent,
+                    animationSpec = tween(durationMillis = 200),
+                    label = "typeBgColor"
                 )
-            } else {
-                Icon(Icons.Default.Lock, null, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = stringResource(R.string.btn_seal_capsule),
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                val animatedTextColor by animateColorAsState(
+                    targetValue = if (isSelected) TokyoAccent else TokyoOnSurface,
+                    animationSpec = tween(durationMillis = 200),
+                    label = "typeTextColor"
                 )
+                val animatedBorderColor by animateColorAsState(
+                    targetValue = if (isSelected) TokyoPrimary.copy(alpha = 0.8f) else Color.Transparent,
+                    animationSpec = tween(durationMillis = 200),
+                    label = "typeBorderColor"
+                )
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(animatedBgColor)
+                        .border(1.dp, animatedBorderColor, RoundedCornerShape(10.dp))
+                        .clickable { onKindChange(kind) }
+                        .padding(horizontal = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = animatedTextColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = animatedTextColor
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
             }
         }
     }

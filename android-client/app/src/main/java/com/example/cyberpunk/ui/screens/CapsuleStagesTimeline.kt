@@ -67,6 +67,7 @@ import com.example.cyberpunk.R
 import com.example.cyberpunk.data.VoicePlayerHelper
 import com.example.cyberpunk.ui.theme.TokyoAccent
 import com.example.cyberpunk.ui.theme.TokyoBackground
+import com.example.cyberpunk.ui.theme.TokyoBorderGradient
 import com.example.cyberpunk.ui.theme.TokyoError
 import com.example.cyberpunk.ui.theme.TokyoOnBackground
 import com.example.cyberpunk.ui.theme.TokyoOnSurface
@@ -179,7 +180,7 @@ private fun CapsuleMediaSection(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = TokyoSurface),
-        border = BorderStroke(1.dp, TokyoPrimary.copy(alpha = 0.4f))
+        border = BorderStroke(1.dp, TokyoBorderGradient)
     ) {
         Column(
             modifier = Modifier
@@ -546,7 +547,7 @@ private fun TimelineStageRow(
                 .padding(bottom = 16.dp),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = TokyoSurface),
-            border = BorderStroke(borderWidth, borderColor)
+            border = if (isCurrent) BorderStroke(1.dp, TokyoBorderGradient) else BorderStroke(borderWidth, borderColor)
         ) {
             Column(
                 modifier = Modifier

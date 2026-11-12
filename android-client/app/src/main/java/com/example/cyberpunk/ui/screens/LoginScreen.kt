@@ -47,6 +47,7 @@ import com.example.cyberpunk.R
 import com.example.cyberpunk.ui.components.Capsule3DView
 import com.example.cyberpunk.ui.theme.TokyoAccent
 import com.example.cyberpunk.ui.theme.TokyoBackground
+import com.example.cyberpunk.ui.theme.TokyoBorderGradient
 import com.example.cyberpunk.ui.theme.TokyoOnBackground
 import com.example.cyberpunk.ui.theme.TokyoOnSurface
 import com.example.cyberpunk.ui.theme.TokyoPrimary
@@ -134,7 +135,7 @@ fun LoginScreen(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = TokyoSurface),
-                border = BorderStroke(1.dp, TokyoPrimary.copy(alpha = 0.5f))
+                border = BorderStroke(1.dp, TokyoBorderGradient)
             ) {
                 Column(
                     modifier = Modifier

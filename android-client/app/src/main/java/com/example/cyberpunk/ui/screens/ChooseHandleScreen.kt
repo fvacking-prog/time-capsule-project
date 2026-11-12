@@ -48,6 +48,7 @@ import coil.compose.AsyncImage
 import com.example.cyberpunk.R
 import com.example.cyberpunk.ui.theme.TokyoAccent
 import com.example.cyberpunk.ui.theme.TokyoBackground
+import com.example.cyberpunk.ui.theme.TokyoBorderGradient
 import com.example.cyberpunk.ui.theme.TokyoError
 import com.example.cyberpunk.ui.theme.TokyoOnBackground
 import com.example.cyberpunk.ui.theme.TokyoOnSurface
@@ -136,7 +137,7 @@ fun ChooseHandleScreen(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = TokyoSurface),
-                border = BorderStroke(1.dp, TokyoPrimary.copy(alpha = 0.45f))
+                border = BorderStroke(1.dp, TokyoBorderGradient)
             ) {
                 Column(
                     modifier = Modifier
