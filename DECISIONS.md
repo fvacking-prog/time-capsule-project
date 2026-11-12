@@ -50,3 +50,20 @@
 4. **Автоопределение репозитория на странице `docs/index.html` и в `release.sh`**:
    - Страница `docs/index.html` использует цвета палитры Tokyo Night; при открытии на `*.github.io/<repo>` автоматически подставляет ссылку на `/releases/latest/download/timecapsule-release.apk`.
    - Скрипт `release.sh` перед изменением `versionCode` проверяет `https://` адрес и наличие `keystore.properties`, не затрагивая существующие `release.keystore` и `keystore.properties`.
+
+## Доработка: Google Sign-In, улучшенная геолокация и радиус 50–500 м
+1. **Google Sign-In через GetSignInWithGoogleOption**:
+   - Переход на единый `GetCredentialRequest` с `GetSignInWithGoogleOption.Builder(BuildConfig.GOOGLE_WEB_CLIENT_ID).build()`.
+   - Удален двухшаговый fallback через `GetGoogleIdOption`.
+   - Сохранены понятные сообщения об ошибках (отмена, отсутствие Google-аккаунта, проблемы с сетью, DEVELOPER_ERROR). При выходе выполняется `clearCredentialState(ClearCredentialStateRequest())` и очистка локальной сессии.
+2. **Определение геолокации с fallback на LocationManager**:
+   - Проверка системного статуса геолокации (`LocationManagerCompat.isLocationEnabled`). При выключенной геолокации показывается диалог с переходом в настройки геолокации (`Settings.ACTION_LOCATION_SOURCE_SETTINGS`).
+   - Первичный запрос через `FusedLocationProviderClient.getCurrentLocation(PRIORITY_HIGH_ACCURACY)` с таймаутом 5 секунд (`withTimeoutOrNull(5_000L)`).
+   - При сбое Play Services или возврате `null` — fallback на `LocationManager` (`GPS_PROVIDER` и `NETWORK_PROVIDER`, API 30+ `getCurrentLocation`, иначе `requestSingleUpdate` с таймаутом).
+   - При предоставлении только Coarse-разрешения выводится информационный Snackbar с предупреждением о сниженной точности.
+   - При отказе в разрешениях выводится Snackbar с кнопкой перехода в настройки приложения (`Settings.ACTION_APPLICATION_DETAILS_SETTINGS`).
+   - При уходе с экрана корутина запроса локации немедленно отменяется (`DisposableEffect` -> `cancelLocationFetch()`).
+3. **Радиус гео-капсулы (сервер: 20..500 м, клиент: 50..500 м)**:
+   - Сервер строго валидирует радиус в диапазоне `20.0..500.0` метров для гео-капсул (покрыто юнит-тестами).
+   - Клиент использует `Slider` в диапазоне `50..500` м (значение по умолчанию: 50 м) с горизонтальным отступом контейнера `Modifier.padding(horizontal = 8.dp)`, исключающим обрезку ползунка слева.
+   - Добавлены быстрые чипы выбора `50 / 100 / 200 / 500 м` и текст-подсказка: «В помещении GPS неточен: берите больше (100–200 м)». Отображение радиуса оформлено в виде: «Радиус: 50 м».

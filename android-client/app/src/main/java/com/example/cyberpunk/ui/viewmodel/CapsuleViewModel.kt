@@ -69,6 +69,8 @@ data class CreateCapsuleFormState(
     val isGeoLocked: Boolean = false,
     val latitude: Double? = null,
     val longitude: Double? = null,
+    val locationAccuracyMeters: Int? = null,
+    val isCoarseOnlyLocation: Boolean = false,
     val radiusMeters: Float = 50f,
     val participantSearchQuery: String = "",
     val selectedParticipantIds: Set<String> = emptySet(),
@@ -139,6 +141,7 @@ data class CapsuleUiState(
     val showAboutDialog: Boolean = false,
     val aboutDialogType: String = "ABOUT",
     val isDeletingData: Boolean = false,
+    val showLocationDisabledDialog: Boolean = false,
     val isCheckingUpdates: Boolean = false,
     val availableUpdate: AppVersionDto? = null,
     val showUpdateDialog: Boolean = false,
@@ -217,6 +220,7 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
     private var recipientSearchJob: Job? = null
     private var handleCheckJob: Job? = null
     private var waitingForInstallPermission: Boolean = false
+    private var locationFetchJob: Job? = null
 
     init {
         ApiConfig.init(appContext)
@@ -1106,32 +1110,61 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(showConfirmSealDialog = false) }
     }
 
-    fun fetchLocationForCreateForm() {
-        viewModelScope.launch {
+    fun fetchLocationForCreateForm(isCoarseOnly: Boolean = false) {
+        if (!locationProvider.isLocationEnabled()) {
+            _uiState.update { it.copy(showLocationDisabledDialog = true) }
+            return
+        }
+
+        locationFetchJob?.cancel()
+        locationFetchJob = viewModelScope.launch {
             _uiState.update { it.copy(createForm = it.createForm.copy(isFetchingLocation = true)) }
             try {
-                val coords = locationProvider.getCurrentLocation()
-                if (coords != null) {
+                val loc = locationProvider.getCurrentLocation()
+                if (loc != null) {
+                    val accuracy = if (loc.hasAccuracy()) loc.accuracy.toInt() else null
                     _uiState.update {
                         it.copy(
-                            deviceLat = coords.latitude,
-                            deviceLon = coords.longitude,
+                            deviceLat = loc.latitude,
+                            deviceLon = loc.longitude,
                             createForm = it.createForm.copy(
-                                latitude = coords.latitude,
-                                longitude = coords.longitude,
+                                latitude = loc.latitude,
+                                longitude = loc.longitude,
+                                locationAccuracyMeters = accuracy,
+                                isCoarseOnlyLocation = isCoarseOnly,
                                 isFetchingLocation = false
                             )
                         )
+                    }
+                    if (isCoarseOnly) {
+                        _snackbarEvents.tryEmit(appContext.getString(R.string.location_coarse_only_warning))
                     }
                 } else {
                     _uiState.update { it.copy(createForm = it.createForm.copy(isFetchingLocation = false)) }
                     _snackbarEvents.tryEmit(appContext.getString(R.string.location_fetch_error))
                 }
+            } catch (e: CancellationException) {
+                _uiState.update { it.copy(createForm = it.createForm.copy(isFetchingLocation = false)) }
+                throw e
             } catch (e: Exception) {
                 _uiState.update { it.copy(createForm = it.createForm.copy(isFetchingLocation = false)) }
-                _snackbarEvents.tryEmit(appContext.getString(R.string.location_fetch_error))
+                _snackbarEvents.tryEmit(e.localizedMessage ?: appContext.getString(R.string.location_fetch_error))
             }
         }
+    }
+
+    fun cancelLocationFetch() {
+        locationFetchJob?.cancel()
+        locationFetchJob = null
+        _uiState.update { it.copy(createForm = it.createForm.copy(isFetchingLocation = false)) }
+    }
+
+    fun dismissLocationDisabledDialog() {
+        _uiState.update { it.copy(showLocationDisabledDialog = false) }
+    }
+
+    fun onLocationPermissionDenied() {
+        _snackbarEvents.tryEmit(appContext.getString(R.string.location_permission_denied_snackbar))
     }
 
     fun updateCreateRadius(radius: Float) {

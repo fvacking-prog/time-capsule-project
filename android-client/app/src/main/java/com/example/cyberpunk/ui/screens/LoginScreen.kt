@@ -51,7 +51,7 @@ import com.example.cyberpunk.ui.theme.TokyoOnBackground
 import com.example.cyberpunk.ui.theme.TokyoOnSurface
 import com.example.cyberpunk.ui.theme.TokyoPrimary
 import com.example.cyberpunk.ui.theme.TokyoSurface
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
 import kotlinx.coroutines.launch
@@ -153,30 +153,16 @@ fun LoginScreen(
                             coroutineScope.launch {
                                 try {
                                     val credentialManager = CredentialManager.create(context)
-                                    fun buildCredentialRequest(filterAuthorized: Boolean): GetCredentialRequest {
-                                        val googleIdOption = GetGoogleIdOption.Builder()
-                                            .setFilterByAuthorizedAccounts(filterAuthorized)
-                                            .setServerClientId(webClientId)
-                                            .setAutoSelectEnabled(false)
-                                            .build()
-                                        return GetCredentialRequest.Builder()
-                                            .addCredentialOption(googleIdOption)
-                                            .build()
-                                    }
+                                    val signInWithGoogleOption = GetSignInWithGoogleOption.Builder(webClientId)
+                                        .build()
+                                    val request = GetCredentialRequest.Builder()
+                                        .addCredentialOption(signInWithGoogleOption)
+                                        .build()
 
-                                    val result = try {
-                                        // Шаг 1: попытка входа через ранее авторизованные Google-аккаунты
-                                        credentialManager.getCredential(
-                                            request = buildCredentialRequest(filterAuthorized = true),
-                                            context = context
-                                        )
-                                    } catch (_: NoCredentialException) {
-                                        // Шаг 2: fallback на полный выбор любого Google-аккаунта
-                                        credentialManager.getCredential(
-                                            request = buildCredentialRequest(filterAuthorized = false),
-                                            context = context
-                                        )
-                                    }
+                                    val result = credentialManager.getCredential(
+                                        request = request,
+                                        context = context
+                                    )
 
                                     val credential = result.credential
                                     if (credential is CustomCredential &&

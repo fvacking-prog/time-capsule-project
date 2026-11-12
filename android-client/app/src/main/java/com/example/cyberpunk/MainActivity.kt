@@ -1,6 +1,9 @@
 package com.example.cyberpunk
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -32,13 +35,16 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -58,6 +64,7 @@ import com.example.cyberpunk.ui.components.ServerSettingsDialog
 import com.example.cyberpunk.ui.components.TimeCapsuleTopBar
 import com.example.cyberpunk.ui.screens.CapsuleStagesTimeline
 import com.example.cyberpunk.ui.screens.CapsulesShelfScreen
+import kotlinx.coroutines.launch
 import com.example.cyberpunk.ui.screens.ChooseHandleScreen
 import com.example.cyberpunk.ui.screens.CreateCapsuleScreen
 import com.example.cyberpunk.ui.screens.EnterPinDialog
@@ -124,6 +131,7 @@ fun TimeCapsuleApp(
     val navController = rememberNavController()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(capsuleViewModel) {
         capsuleViewModel.snackbarEvents.collectLatest { message ->
@@ -560,7 +568,27 @@ fun TimeCapsuleApp(
                     onCustomDateSelect = capsuleViewModel::setCreateCustomDate,
                     onCustomTimeSelect = capsuleViewModel::setCreateCustomTime,
                     onGeoLockedToggle = capsuleViewModel::updateCreateIsGeoLocked,
-                    onTakeMyLocation = capsuleViewModel::fetchLocationForCreateForm,
+                    onTakeMyLocation = { isCoarse -> capsuleViewModel.fetchLocationForCreateForm(isCoarse) },
+                    onCancelLocationFetch = capsuleViewModel::cancelLocationFetch,
+                    onShowPermissionDeniedSnackbar = {
+                        coroutineScope.launch {
+                            val res = snackbarHostState.showSnackbar(
+                                message = context.getString(R.string.location_permission_denied_snackbar),
+                                actionLabel = context.getString(R.string.btn_open_app_settings),
+                                duration = SnackbarDuration.Long
+                            )
+                            if (res == SnackbarResult.ActionPerformed) {
+                                runCatching {
+                                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                        data = Uri.fromParts("package", context.packageName, null)
+                                    }
+                                    context.startActivity(intent)
+                                }
+                            }
+                        }
+                    },
+                    showLocationDisabledDialog = uiState.showLocationDisabledDialog,
+                    onDismissLocationDisabledDialog = capsuleViewModel::dismissLocationDisabledDialog,
                     onRadiusChange = capsuleViewModel::updateCreateRadius,
                     onParticipantSearchQueryChange = capsuleViewModel::updateParticipantSearchQuery,
                     onToggleParticipant = capsuleViewModel::toggleParticipantSelection,

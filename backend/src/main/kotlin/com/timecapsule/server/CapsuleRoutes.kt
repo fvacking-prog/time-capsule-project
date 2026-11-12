@@ -896,7 +896,8 @@ private const val MAX_PARTICIPANTS_COUNT = 100
 private const val MAX_PERSONAL_RECIPIENTS = 10
 private const val MAX_DAILY_SENT_CAPSULES = 30L
 private const val ONE_DAY_MILLIS = 24L * 60L * 60L * 1000L
-private const val MAX_RADIUS_METERS = 100_000.0
+private const val MIN_GEO_RADIUS_METERS = 20.0
+private const val MAX_GEO_RADIUS_METERS = 500.0
 
 internal fun validateCreateCapsuleRequest(request: CreateCapsuleRequest, authenticatedUserId: String) {
     require(authenticatedUserId.isNotBlank() && authenticatedUserId.length <= MAX_ID_LENGTH) {
@@ -910,8 +911,8 @@ internal fun validateCreateCapsuleRequest(request: CreateCapsuleRequest, authent
         require(GeoUtils.isValidCoordinate(request.latitude, request.longitude)) {
             "Invalid capsule coordinates"
         }
-        require(request.radiusMeters.isFinite() && request.radiusMeters in 0.1..MAX_RADIUS_METERS) {
-            "radiusMeters must be between 0.1 and $MAX_RADIUS_METERS"
+        require(request.radiusMeters.isFinite() && request.radiusMeters in MIN_GEO_RADIUS_METERS..MAX_GEO_RADIUS_METERS) {
+            "Радиус гео-капсулы должен быть в диапазоне от 20 до 500 метров"
         }
     }
     require(

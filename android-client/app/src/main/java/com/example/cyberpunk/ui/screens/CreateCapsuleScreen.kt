@@ -1,5 +1,11 @@
 package com.example.cyberpunk.ui.screens
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,6 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
@@ -70,6 +77,7 @@ import androidx.compose.material3.TimePickerDefaults
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -79,10 +87,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import com.example.cyberpunk.R
 import com.example.cyberpunk.data.UnlockDateTimeHelper
@@ -122,7 +132,11 @@ fun CreateCapsuleScreen(
     onCustomDateSelect: (Long) -> Unit = {},
     onCustomTimeSelect: (Int, Int) -> Boolean = { _, _ -> true },
     onGeoLockedToggle: (Boolean) -> Unit = {},
-    onTakeMyLocation: () -> Unit,
+    onTakeMyLocation: (isCoarseOnly: Boolean) -> Unit = {},
+    onCancelLocationFetch: () -> Unit = {},
+    onShowPermissionDeniedSnackbar: () -> Unit = {},
+    showLocationDisabledDialog: Boolean = false,
+    onDismissLocationDisabledDialog: () -> Unit = {},
     onRadiusChange: (Float) -> Unit,
     onParticipantSearchQueryChange: (String) -> Unit,
     onToggleParticipant: (String) -> Unit,
@@ -136,6 +150,84 @@ fun CreateCapsuleScreen(
     onSubmit: () -> Unit
 ) {
     val creatorId = currentUserId ?: ""
+    val context = LocalContext.current
+
+    DisposableEffect(Unit) {
+        onDispose {
+            onCancelLocationFetch()
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        when {
+            fineGranted -> onTakeMyLocation(false)
+            coarseGranted -> onTakeMyLocation(true)
+            else -> onShowPermissionDeniedSnackbar()
+        }
+    }
+
+    val requestLocation = {
+        val hasFine = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        val hasCoarse = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        when {
+            hasFine -> onTakeMyLocation(false)
+            hasCoarse -> onTakeMyLocation(true)
+            else -> permissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        }
+    }
+
+    if (showLocationDisabledDialog) {
+        AlertDialog(
+            onDismissRequest = onDismissLocationDisabledDialog,
+            title = {
+                Text(
+                    text = stringResource(R.string.dialog_location_disabled_title),
+                    color = TokyoOnBackground,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.dialog_location_disabled_msg),
+                    color = TokyoOnSurface
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDismissLocationDisabledDialog()
+                        runCatching {
+                            context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.btn_open_location_settings), color = TokyoPrimary)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismissLocationDisabledDialog) {
+                    Text(stringResource(R.string.btn_cancel), color = TokyoOnSurface)
+                }
+            },
+            containerColor = TokyoSurface
+        )
+    }
     val dateFormatter = remember {
         DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
             .withZone(ZoneId.systemDefault())
@@ -796,11 +888,18 @@ fun CreateCapsuleScreen(
                     Spacer(modifier = Modifier.height(6.dp))
 
                     // Координаты
+                    val isLocationFixed = formState.latitude != null && formState.longitude != null
                     OutlinedButton(
-                        onClick = onTakeMyLocation,
+                        onClick = { requestLocation() },
                         enabled = !formState.isFetchingLocation,
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TokyoPrimary),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = if (isLocationFixed) TokyoSuccess else TokyoPrimary
+                        ),
+                        border = BorderStroke(
+                            1.dp,
+                            if (isLocationFixed) TokyoSuccess else TokyoPrimary.copy(alpha = 0.5f)
+                        ),
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         if (formState.isFetchingLocation) {
@@ -809,6 +908,30 @@ fun CreateCapsuleScreen(
                                 color = TokyoPrimary,
                                 strokeWidth = 2.dp
                             )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(stringResource(R.string.location_searching_progress))
+                        } else if (isLocationFixed) {
+                            Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp), tint = TokyoSuccess)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            val fixedText = if (formState.locationAccuracyMeters != null) {
+                                stringResource(
+                                    R.string.location_fixed_format,
+                                    formState.latitude!!,
+                                    formState.longitude!!,
+                                    formState.locationAccuracyMeters
+                                )
+                            } else {
+                                stringResource(
+                                    R.string.location_coords_format,
+                                    formState.latitude!!,
+                                    formState.longitude!!
+                                )
+                            }
+                            Text(
+                                text = fixedText,
+                                color = TokyoSuccess,
+                                fontWeight = FontWeight.Medium
+                            )
                         } else {
                             Icon(Icons.Default.MyLocation, null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
@@ -816,27 +939,66 @@ fun CreateCapsuleScreen(
                         }
                     }
 
-                    if (formState.latitude != null && formState.longitude != null) {
+                    // Радиус (диапазон 50..500 м, быстрые чипы и устранение обрезки ползунка)
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Text(
-                            text = stringResource(R.string.location_coords_format, formState.latitude, formState.longitude),
-                            style = MaterialTheme.typography.bodySmall.copy(color = TokyoAccent)
-                        )
-                    }
-
-                    // Радиус
-                    Column {
-                        Text(
-                            text = stringResource(R.string.radius_slider_format, formState.radiusMeters),
-                            style = MaterialTheme.typography.bodySmall.copy(color = TokyoOnSurface)
-                        )
-                        Slider(
-                            value = formState.radiusMeters,
-                            onValueChange = onRadiusChange,
-                            valueRange = 10f..500f,
-                            colors = SliderDefaults.colors(
-                                thumbColor = TokyoPrimary,
-                                activeTrackColor = TokyoPrimary
+                            text = "Радиус: ${formState.radiusMeters.toInt()} м",
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                color = TokyoOnBackground
                             )
+                        )
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp)
+                        ) {
+                            Slider(
+                                value = formState.radiusMeters.coerceIn(50f, 500f),
+                                onValueChange = { onRadiusChange(kotlin.math.round(it)) },
+                                valueRange = 50f..500f,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = TokyoPrimary,
+                                    activeTrackColor = TokyoPrimary,
+                                    inactiveTrackColor = TokyoPrimary.copy(alpha = 0.25f)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf(50f, 100f, 200f, 500f).forEach { chipRadius ->
+                                val isSelected = formState.radiusMeters.toInt() == chipRadius.toInt()
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { onRadiusChange(chipRadius) },
+                                    label = { Text("${chipRadius.toInt()} м") },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = TokyoPrimary.copy(alpha = 0.25f),
+                                        selectedLabelColor = TokyoPrimary,
+                                        containerColor = TokyoBackground.copy(alpha = 0.6f),
+                                        labelColor = TokyoOnSurface
+                                    ),
+                                    border = FilterChipDefaults.filterChipBorder(
+                                        enabled = true,
+                                        selected = isSelected,
+                                        borderColor = TokyoPrimary.copy(alpha = 0.25f),
+                                        selectedBorderColor = TokyoPrimary
+                                    )
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = stringResource(R.string.radius_indoor_hint),
+                            style = MaterialTheme.typography.bodySmall.copy(color = TokyoOnSurface)
                         )
                     }
 

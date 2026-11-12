@@ -861,6 +861,53 @@ class BackendUnitTests {
     }
 
     @Test
+    fun `validateCreateCapsuleRequest validates radius strictly between 20 and 500 meters for geo capsules`() {
+        val now = System.currentTimeMillis()
+        val baseGeoRequest = com.timecapsule.shared.CreateCapsuleRequest(
+            title = "Geo Radius Test",
+            latitude = 40.2825,
+            longitude = 69.6221,
+            isGeoLocked = true,
+            radiusMeters = 50.0,
+            stages = listOf(
+                com.timecapsule.shared.CreateStageRequest(
+                    stageNumber = 1,
+                    unlockDate = now + 120_000L,
+                    secretText = "Secret geo message"
+                )
+            )
+        )
+
+        // Valid boundaries: 20m and 500m
+        validateCreateCapsuleRequest(baseGeoRequest.copy(radiusMeters = 20.0), "user_alice")
+        validateCreateCapsuleRequest(baseGeoRequest.copy(radiusMeters = 50.0), "user_alice")
+        validateCreateCapsuleRequest(baseGeoRequest.copy(radiusMeters = 500.0), "user_alice")
+
+        // Invalid: below 20m
+        assertFailsWith<IllegalArgumentException> {
+            validateCreateCapsuleRequest(baseGeoRequest.copy(radiusMeters = 19.9), "user_alice")
+        }
+        assertFailsWith<IllegalArgumentException> {
+            validateCreateCapsuleRequest(baseGeoRequest.copy(radiusMeters = 0.0), "user_alice")
+        }
+        assertFailsWith<IllegalArgumentException> {
+            validateCreateCapsuleRequest(baseGeoRequest.copy(radiusMeters = -10.0), "user_alice")
+        }
+
+        // Invalid: above 500m
+        assertFailsWith<IllegalArgumentException> {
+            validateCreateCapsuleRequest(baseGeoRequest.copy(radiusMeters = 500.1), "user_alice")
+        }
+        assertFailsWith<IllegalArgumentException> {
+            validateCreateCapsuleRequest(baseGeoRequest.copy(radiusMeters = 1000.0), "user_alice")
+        }
+
+        // For non-geo capsules, radius validation is bypassed
+        val nonGeo = baseGeoRequest.copy(isGeoLocked = false, radiusMeters = 10.0)
+        validateCreateCapsuleRequest(nonGeo, "user_alice")
+    }
+
+    @Test
     fun `load test with 50 concurrent check-ins and capsule reads does not produce 500 or deadlocks`() {
         val testDb = Database.connect(
             url = "jdbc:h2:mem:test_load_${System.nanoTime()};DB_CLOSE_DELAY=-1",
