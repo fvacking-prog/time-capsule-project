@@ -7,20 +7,25 @@ import com.timecapsule.shared.AppVersionDto
 import com.timecapsule.shared.AuthResponse
 import com.timecapsule.shared.BlockUserRequest
 import com.timecapsule.shared.CapsuleDto
+import com.timecapsule.shared.CapsuleMediaDto
 import com.timecapsule.shared.CapsuleStageDto
 import com.timecapsule.shared.CheckHandleResponse
 import com.timecapsule.shared.CheckInRequest
+import com.timecapsule.shared.CreateAttachmentRequest
 import com.timecapsule.shared.CreateCapsuleRequest
 import com.timecapsule.shared.GoogleAuthRequest
 import com.timecapsule.shared.MessageResponse
 import com.timecapsule.shared.ParticipantStatusDto
 import com.timecapsule.shared.UpdateHandleRequest
 import com.timecapsule.shared.UserDto
+import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.header
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
@@ -44,6 +49,7 @@ import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
 import java.security.SecureRandom
+import java.util.Base64
 import java.util.UUID
 
 private const val SESSION_TTL_MILLIS = 30L * 24 * 60 * 60 * 1000L
@@ -290,6 +296,7 @@ fun Route.capsuleRoutes() {
                 .map { it[Capsules.id] }
 
             if (ownedCapsuleIds.isNotEmpty()) {
+                CapsuleMedia.deleteWhere { capsuleId inList ownedCapsuleIds }
                 CapsuleStages.deleteWhere { capsuleId inList ownedCapsuleIds }
                 CapsuleParticipants.deleteWhere { capsuleId inList ownedCapsuleIds }
                 Capsules.deleteWhere { id inList ownedCapsuleIds }
@@ -407,11 +414,32 @@ fun Route.capsuleRoutes() {
 
         post {
             val authenticatedUserId = call.requireAuthenticatedUserId()
+            val contentLength = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
+            if (contentLength != null && contentLength > MAX_CREATE_CAPSULE_BODY_BYTES) {
+                throw IllegalArgumentException("Превышен лимит размера тела создания капсулы (максимум 2.5 МБ)")
+            }
             val request = call.receive<CreateCapsuleRequest>()
             validateCreateCapsuleRequest(request, authenticatedUserId)
             val capsule = transaction {
                 val now = System.currentTimeMillis()
                 val capsuleId = UUID.randomUUID().toString()
+
+                if (request.attachments.isNotEmpty()) {
+                    val dayAgo = now - ONE_DAY_MILLIS
+                    val recentAttachmentsCount = (CapsuleMedia innerJoin Capsules)
+                        .selectAll()
+                        .where {
+                            (Capsules.creatorId eq authenticatedUserId) and
+                                (CapsuleMedia.createdAt greaterEq dayAgo)
+                        }
+                        .count()
+
+                    if (recentAttachmentsCount + request.attachments.size > MAX_DAILY_ATTACHMENTS) {
+                        throw TooManyRequestsException(
+                            "Превышен суточный лимит вложений (не более $MAX_DAILY_ATTACHMENTS вложений в сутки). Попробуйте позже."
+                        )
+                    }
+                }
 
                 val resolvedHandleRecipients = request.recipientHandles
                     .map { HandleUtils.normalizeHandle(it) }
@@ -551,6 +579,21 @@ fun Route.capsuleRoutes() {
                     }
                 }
 
+                for (att in request.attachments) {
+                    val rawBytes = Base64.getDecoder().decode(att.dataBase64)
+                    val encrypted = CryptoUtils.encryptBytes(rawBytes)
+                    CapsuleMedia.insert {
+                        it[id] = UUID.randomUUID().toString()
+                        it[CapsuleMedia.capsuleId] = capsuleId
+                        it[kind] = att.kind.uppercase()
+                        it[mime] = att.mime.lowercase()
+                        it[sizeBytes] = rawBytes.size.toLong()
+                        it[durationMs] = att.durationMs
+                        it[encryptedBytes] = encrypted
+                        it[createdAt] = now
+                    }
+                }
+
                 buildCapsuleDto(capsuleId, now, requestingUserId = authenticatedUserId)
             }
             call.respond(capsule)
@@ -654,6 +697,71 @@ fun Route.capsuleRoutes() {
                 buildCapsuleDto(capsuleId, System.currentTimeMillis(), requestingUserId = authenticatedUserId)
             }
             call.respond(capsule)
+        }
+
+        get("/{id}/media/{mediaId}") {
+            val authenticatedUserId = call.requireAuthenticatedUserId()
+            val capsuleId = call.parameters["id"] ?: throw CapsuleNotFoundException("Missing capsule id")
+            val mediaId = call.parameters["mediaId"] ?: throw CapsuleNotFoundException("Missing media id")
+
+            val (mediaMime, decryptedBytes) = transaction {
+                if (!canUserAccessCapsule(capsuleId, authenticatedUserId)) {
+                    throw ForbiddenException("Доступ к капсуле запрещён")
+                }
+
+                val capsuleRow = Capsules
+                    .selectAll()
+                    .where { Capsules.id eq capsuleId }
+                    .singleOrNull() ?: throw CapsuleNotFoundException("Капсула '$capsuleId' не найдена")
+
+                val now = System.currentTimeMillis()
+                val isGeoLocked = capsuleRow[Capsules.isGeoLocked]
+                val earliestUnlockDate = CapsuleStages
+                    .selectAll()
+                    .where { CapsuleStages.capsuleId eq capsuleId }
+                    .minOfOrNull { it[CapsuleStages.unlockDate] } ?: Long.MAX_VALUE
+
+                val allParticipantsNearbyAndRecent = if (!isGeoLocked) {
+                    true
+                } else {
+                    val participants = (CapsuleParticipants innerJoin Users)
+                        .selectAll()
+                        .where { CapsuleParticipants.capsuleId eq capsuleId }
+                        .toList()
+                    participants.isNotEmpty() && participants.all { row ->
+                        GeoUtils.isNearbyAndRecent(
+                            lastLat = row[CapsuleParticipants.lastLat],
+                            lastLon = row[CapsuleParticipants.lastLon],
+                            lastSeenAt = row[CapsuleParticipants.lastSeenAt],
+                            capsuleLat = capsuleRow[Capsules.latitude],
+                            capsuleLon = capsuleRow[Capsules.longitude],
+                            radiusMeters = capsuleRow[Capsules.radiusMeters],
+                            now = now
+                        )
+                    }
+                }
+
+                val isUnlocked = now >= earliestUnlockDate && allParticipantsNearbyAndRecent
+                if (!isUnlocked) {
+                    throw ConflictException("Медиа недоступно до наступления даты открытия и выполнения гео-условий")
+                }
+
+                val mediaRow = CapsuleMedia
+                    .selectAll()
+                    .where { (CapsuleMedia.id eq mediaId) and (CapsuleMedia.capsuleId eq capsuleId) }
+                    .singleOrNull() ?: throw CapsuleNotFoundException("Медиа '$mediaId' не найдено")
+
+                val rawEncrypted = mediaRow[CapsuleMedia.encryptedBytes]
+                val decrypted = CryptoUtils.decryptBytes(rawEncrypted)
+                mediaRow[CapsuleMedia.mime] to decrypted
+            }
+
+            call.response.headers.append(HttpHeaders.CacheControl, "no-store")
+            call.respondBytes(
+                bytes = decryptedBytes,
+                contentType = ContentType.parse(mediaMime),
+                status = HttpStatusCode.OK
+            )
         }
     }
 }
@@ -898,6 +1006,10 @@ private const val MAX_DAILY_SENT_CAPSULES = 30L
 private const val ONE_DAY_MILLIS = 24L * 60L * 60L * 1000L
 private const val MIN_GEO_RADIUS_METERS = 20.0
 private const val MAX_GEO_RADIUS_METERS = 500.0
+private const val MAX_PHOTO_BYTES = 800L * 1024L // 800 KB
+private const val MAX_VOICE_BYTES = 1024L * 1024L // 1 MB
+private const val MAX_CREATE_CAPSULE_BODY_BYTES = 2_621_440L // 2.5 MB (2.5 * 1024 * 1024)
+private const val MAX_DAILY_ATTACHMENTS = 20
 
 internal fun validateCreateCapsuleRequest(request: CreateCapsuleRequest, authenticatedUserId: String) {
     require(authenticatedUserId.isNotBlank() && authenticatedUserId.length <= MAX_ID_LENGTH) {
@@ -956,6 +1068,64 @@ internal fun validateCreateCapsuleRequest(request: CreateCapsuleRequest, authent
     }
     require(request.tags.all { it.trim().length in 1..30 }) {
         "Each tag must be between 1 and 30 characters"
+    }
+
+    val photoAttachments = request.attachments.filter { it.kind.equals("PHOTO", ignoreCase = true) }
+    val voiceAttachments = request.attachments.filter { it.kind.equals("VOICE", ignoreCase = true) }
+    require(photoAttachments.size <= 1) {
+        "В капсулу можно вложить не более 1 фото"
+    }
+    require(voiceAttachments.size <= 1) {
+        "В капсулу можно вложить не более 1 голосового сообщения"
+    }
+    require(request.attachments.size == photoAttachments.size + voiceAttachments.size) {
+        "Недопустимый тип вложения (разрешены только PHOTO и VOICE)"
+    }
+
+    for (att in request.attachments) {
+        val rawBytes = try {
+            Base64.getDecoder().decode(att.dataBase64)
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Некорректные данные вложения (Base64)")
+        }
+
+        if (att.kind.equals("PHOTO", ignoreCase = true)) {
+            require(att.mime.equals("image/jpeg", ignoreCase = true)) {
+                "Фото должно быть в формате image/jpeg"
+            }
+            require(rawBytes.size.toLong() <= MAX_PHOTO_BYTES) {
+                "Размер фото не должен превышать 800 КБ"
+            }
+            require(
+                rawBytes.size >= 3 &&
+                    rawBytes[0] == 0xFF.toByte() &&
+                    rawBytes[1] == 0xD8.toByte() &&
+                    rawBytes[2] == 0xFF.toByte()
+            ) {
+                "Файл не является валидным изображением JPEG (неверная сигнатура)"
+            }
+        } else if (att.kind.equals("VOICE", ignoreCase = true)) {
+            require(att.mime.equals("audio/mp4", ignoreCase = true)) {
+                "Голосовая запись должна быть в формате audio/mp4"
+            }
+            require(rawBytes.size.toLong() <= MAX_VOICE_BYTES) {
+                "Размер голосовой записи не должен превышать 1 МБ"
+            }
+            require(
+                rawBytes.size >= 8 &&
+                    rawBytes[4] == 'f'.code.toByte() &&
+                    rawBytes[5] == 't'.code.toByte() &&
+                    rawBytes[6] == 'y'.code.toByte() &&
+                    rawBytes[7] == 'p'.code.toByte()
+            ) {
+                "Файл не является валидной аудиозаписью MP4 (неверная сигнатура ftyp)"
+            }
+            if (att.durationMs != null) {
+                require(att.durationMs > 0 && att.durationMs <= 65_000L) {
+                    "Длительность голосового сообщения должна быть до 60 секунд"
+                }
+            }
+        }
     }
 }
 
@@ -1097,6 +1267,19 @@ fun buildCapsuleDto(
         else -> "SEALED"
     }
 
+    val media = CapsuleMedia
+        .selectAll()
+        .where { CapsuleMedia.capsuleId eq capsuleId }
+        .map { row ->
+            CapsuleMediaDto(
+                id = row[CapsuleMedia.id],
+                kind = row[CapsuleMedia.kind],
+                mime = row[CapsuleMedia.mime],
+                sizeBytes = row[CapsuleMedia.sizeBytes],
+                durationMs = row[CapsuleMedia.durationMs]
+            )
+        }
+
     return CapsuleDto(
         id = capsuleRow[Capsules.id],
         title = capsuleRow[Capsules.title],
@@ -1117,6 +1300,7 @@ fun buildCapsuleDto(
         openedAt = myOpenedAt,
         archived = myArchived,
         creatorHandle = creatorHandle,
-        isInbox = isInbox
+        isInbox = isInbox,
+        media = media
     )
 }

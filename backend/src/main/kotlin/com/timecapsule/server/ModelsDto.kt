@@ -81,7 +81,25 @@ data class CapsuleDto(
     val openedAt: Long? = null,
     val archived: Boolean = false,
     val creatorHandle: String? = null,
-    val isInbox: Boolean = false
+    val isInbox: Boolean = false,
+    val media: List<CapsuleMediaDto> = emptyList()
+)
+
+@Serializable
+data class CapsuleMediaDto(
+    val id: String,
+    val kind: String,
+    val mime: String,
+    val sizeBytes: Long,
+    val durationMs: Long? = null
+)
+
+@Serializable
+data class CreateAttachmentRequest(
+    val kind: String,
+    val mime: String,
+    val dataBase64: String,
+    val durationMs: Long? = null
 )
 
 @Serializable
@@ -105,7 +123,8 @@ data class CreateCapsuleRequest(
     val recipient: String? = null,
     val tags: List<String> = emptyList(),
     val isGeoLocked: Boolean = true,
-    val recipientHandles: List<String> = emptyList()
+    val recipientHandles: List<String> = emptyList(),
+    val attachments: List<CreateAttachmentRequest> = emptyList()
 )
 
 @Serializable

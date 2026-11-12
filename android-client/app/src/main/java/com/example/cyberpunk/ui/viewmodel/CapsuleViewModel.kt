@@ -18,6 +18,7 @@ import com.example.cyberpunk.data.GeoHelper
 import com.example.cyberpunk.data.HandleLocalValidation
 import com.example.cyberpunk.data.HandleValidator
 import com.example.cyberpunk.data.LocationProvider
+import com.example.cyberpunk.data.MediaHelper
 import com.example.cyberpunk.data.RemoteCapsuleRepository
 import com.example.cyberpunk.data.SessionExpiredException
 import com.example.cyberpunk.data.UnlockDateTimeHelper
@@ -26,6 +27,7 @@ import com.example.cyberpunk.data.UserPreferences
 import com.timecapsule.shared.AppVersionDto
 import com.timecapsule.shared.CapsuleDto
 import com.timecapsule.shared.CheckInRequest
+import com.timecapsule.shared.CreateAttachmentRequest
 import com.timecapsule.shared.CreateCapsuleRequest
 import com.timecapsule.shared.CreateStageRequest
 import com.timecapsule.shared.UserDto
@@ -85,7 +87,14 @@ data class CreateCapsuleFormState(
         )
     ),
     val isFetchingLocation: Boolean = false,
-    val isSubmitting: Boolean = false
+    val isSubmitting: Boolean = false,
+    val attachedPhotoBytes: ByteArray? = null,
+    val attachedPhotoBase64: String? = null,
+    val attachedVoiceFile: File? = null,
+    val attachedVoiceBase64: String? = null,
+    val attachedVoiceDurationMs: Long? = null,
+    val isRecordingVoice: Boolean = false,
+    val voiceRecordingSeconds: Int = 0
 )
 
 enum class HandleCheckStatus {
@@ -483,6 +492,7 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
             }
             ApiConfig.clearSession(appContext)
             UserPreferences.clearPin(appContext)
+            MediaHelper.clearMediaCache(appContext)
             _uiState.update { state ->
                 state.copy(
                     isAuthenticated = false,
@@ -1232,6 +1242,69 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun setAttachedPhoto(bytes: ByteArray?, base64: String?) {
+        _uiState.update { it.copy(createForm = it.createForm.copy(attachedPhotoBytes = bytes, attachedPhotoBase64 = base64)) }
+    }
+
+    fun removeAttachedPhoto() {
+        _uiState.update { it.copy(createForm = it.createForm.copy(attachedPhotoBytes = null, attachedPhotoBase64 = null)) }
+    }
+
+    fun setAttachedVoice(file: File?, base64: String?, durationMs: Long?) {
+        _uiState.update {
+            it.copy(
+                createForm = it.createForm.copy(
+                    attachedVoiceFile = file,
+                    attachedVoiceBase64 = base64,
+                    attachedVoiceDurationMs = durationMs,
+                    isRecordingVoice = false,
+                    voiceRecordingSeconds = 0
+                )
+            )
+        }
+    }
+
+    fun removeAttachedVoice() {
+        _uiState.update {
+            it.copy(
+                createForm = it.createForm.copy(
+                    attachedVoiceFile = null,
+                    attachedVoiceBase64 = null,
+                    attachedVoiceDurationMs = null,
+                    isRecordingVoice = false,
+                    voiceRecordingSeconds = 0
+                )
+            )
+        }
+    }
+
+    fun updateVoiceRecordingState(isRecording: Boolean, seconds: Int = 0) {
+        _uiState.update {
+            it.copy(
+                createForm = it.createForm.copy(
+                    isRecordingVoice = isRecording,
+                    voiceRecordingSeconds = seconds
+                )
+            )
+        }
+    }
+
+    suspend fun getOrDownloadMediaFile(capsuleId: String, mediaId: String, mime: String): File? {
+        val ext = if (mime.contains("jpeg") || mime.contains("jpg")) "jpg" else "mp4"
+        val mediaDir = File(appContext.cacheDir, "capsule-media").apply { mkdirs() }
+        val targetFile = File(mediaDir, "media_${capsuleId}_${mediaId}.$ext")
+        if (targetFile.exists() && targetFile.length() > 0) {
+            return targetFile
+        }
+        return try {
+            val bytes = remoteRepository.downloadCapsuleMedia(capsuleId, mediaId)
+            targetFile.writeBytes(bytes)
+            targetFile
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     fun submitCreateCapsule(onCreated: () -> Unit) {
         val state = _uiState.value
         val form = state.createForm
@@ -1286,6 +1359,27 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
             form.recipient.trim().takeIf { it.isNotEmpty() }
         }
 
+        val attachments = mutableListOf<CreateAttachmentRequest>()
+        if (!form.attachedPhotoBase64.isNullOrEmpty()) {
+            attachments.add(
+                CreateAttachmentRequest(
+                    kind = "PHOTO",
+                    mime = "image/jpeg",
+                    dataBase64 = form.attachedPhotoBase64
+                )
+            )
+        }
+        if (!form.attachedVoiceBase64.isNullOrEmpty()) {
+            attachments.add(
+                CreateAttachmentRequest(
+                    kind = "VOICE",
+                    mime = "audio/mp4",
+                    dataBase64 = form.attachedVoiceBase64,
+                    durationMs = form.attachedVoiceDurationMs
+                )
+            )
+        }
+
         val request = CreateCapsuleRequest(
             creatorId = creatorId,
             title = form.title.trim(),
@@ -1305,7 +1399,8 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
             recipient = recipientLabel,
             tags = cleanTags,
             isGeoLocked = form.isGeoLocked,
-            recipientHandles = recipientHandles
+            recipientHandles = recipientHandles,
+            attachments = attachments
         )
 
         viewModelScope.launch {

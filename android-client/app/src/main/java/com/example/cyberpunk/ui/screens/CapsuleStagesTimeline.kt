@@ -3,6 +3,7 @@ package com.example.cyberpunk.ui.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,34 +24,61 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import coil.compose.AsyncImage
 import com.example.cyberpunk.R
+import com.example.cyberpunk.data.VoicePlayerHelper
 import com.example.cyberpunk.ui.theme.TokyoAccent
 import com.example.cyberpunk.ui.theme.TokyoBackground
 import com.example.cyberpunk.ui.theme.TokyoError
 import com.example.cyberpunk.ui.theme.TokyoOnBackground
 import com.example.cyberpunk.ui.theme.TokyoOnSurface
 import com.example.cyberpunk.ui.theme.TokyoPrimary
+import com.example.cyberpunk.ui.theme.TokyoSecondary
 import com.example.cyberpunk.ui.theme.TokyoSuccess
 import com.example.cyberpunk.ui.theme.TokyoSurface
 import com.timecapsule.shared.CapsuleDto
+import com.timecapsule.shared.CapsuleMediaDto
 import com.timecapsule.shared.CapsuleStageDto
+import kotlinx.coroutines.delay
+import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -58,7 +86,8 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun CapsuleStagesTimeline(
     capsule: CapsuleDto?,
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    onDownloadMedia: suspend (mediaId: String, mime: String) -> File? = { _, _ -> null }
 ) {
     val dateFormatter = remember {
         DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
@@ -130,6 +159,329 @@ fun CapsuleStagesTimeline(
                 isCurrent = stage.stageNumber == currentStageNumber,
                 isLast = index == stages.lastIndex
             )
+        }
+
+        if (capsule != null && capsule.media.isNotEmpty() && capsule.isFullyUnlocked) {
+            CapsuleMediaSection(
+                capsule = capsule,
+                onDownloadMedia = onDownloadMedia
+            )
+        }
+    }
+}
+
+@Composable
+private fun CapsuleMediaSection(
+    capsule: CapsuleDto,
+    onDownloadMedia: suspend (mediaId: String, mime: String) -> File?
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = TokyoSurface),
+        border = BorderStroke(1.dp, TokyoPrimary.copy(alpha = 0.4f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.media_section_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = TokyoPrimary
+            )
+
+            capsule.media.forEach { mediaItem ->
+                if (mediaItem.kind.equals("PHOTO", ignoreCase = true)) {
+                    PhotoMediaCard(mediaItem = mediaItem, onDownloadMedia = onDownloadMedia)
+                } else if (mediaItem.kind.equals("VOICE", ignoreCase = true)) {
+                    VoiceMediaCard(mediaItem = mediaItem, onDownloadMedia = onDownloadMedia)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PhotoMediaCard(
+    mediaItem: CapsuleMediaDto,
+    onDownloadMedia: suspend (mediaId: String, mime: String) -> File?
+) {
+    var file by remember { mutableStateOf<File?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+    var hasError by remember { mutableStateOf(false) }
+    var showFullscreen by remember { mutableStateOf(false) }
+
+    LaunchedEffect(mediaItem.id) {
+        isLoading = true
+        hasError = false
+        val downloaded = onDownloadMedia(mediaItem.id, mediaItem.mime)
+        if (downloaded != null && downloaded.exists()) {
+            file = downloaded
+            isLoading = false
+        } else {
+            hasError = true
+            isLoading = false
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(TokyoBackground.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+            .border(1.dp, TokyoPrimary.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(Icons.Default.PhotoCamera, null, tint = TokyoPrimary, modifier = Modifier.size(18.dp))
+            Text(
+                text = stringResource(R.string.attachment_photo_title),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = TokyoOnBackground
+            )
+        }
+
+        if (isLoading) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(vertical = 8.dp)
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = TokyoPrimary, strokeWidth = 2.dp)
+                Text(stringResource(R.string.media_downloading), style = MaterialTheme.typography.bodySmall, color = TokyoOnSurface)
+            }
+        } else if (hasError || file == null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(stringResource(R.string.media_download_error), style = MaterialTheme.typography.bodySmall, color = TokyoError)
+                IconButton(onClick = {
+                    isLoading = true
+                    hasError = false
+                }) {
+                    Icon(Icons.Default.Refresh, null, tint = TokyoPrimary, modifier = Modifier.size(18.dp))
+                }
+            }
+        } else {
+            AsyncImage(
+                model = file,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { showFullscreen = true },
+                contentScale = ContentScale.Crop
+            )
+            Text(
+                text = stringResource(R.string.media_photo_caption),
+                style = MaterialTheme.typography.labelSmall,
+                color = TokyoAccent
+            )
+        }
+    }
+
+    if (showFullscreen && file != null) {
+        Dialog(
+            onDismissRequest = { showFullscreen = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(TokyoBackground.copy(alpha = 0.95f))
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    AsyncImage(
+                        model = file,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                            .clip(RoundedCornerShape(12.dp)),
+                        contentScale = ContentScale.Fit
+                    )
+                    Button(
+                        onClick = { showFullscreen = false },
+                        colors = ButtonDefaults.buttonColors(containerColor = TokyoPrimary, contentColor = TokyoBackground),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(stringResource(R.string.btn_close_preview))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VoiceMediaCard(
+    mediaItem: CapsuleMediaDto,
+    onDownloadMedia: suspend (mediaId: String, mime: String) -> File?
+) {
+    var file by remember { mutableStateOf<File?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+    var hasError by remember { mutableStateOf(false) }
+
+    val player = remember { VoicePlayerHelper() }
+    var isPlaying by remember { mutableStateOf(false) }
+    var currentPosMs by remember { mutableIntStateOf(0) }
+    var totalDurationMs by remember { mutableIntStateOf(0) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            player.release()
+        }
+    }
+
+    LaunchedEffect(mediaItem.id) {
+        isLoading = true
+        hasError = false
+        val downloaded = onDownloadMedia(mediaItem.id, mediaItem.mime)
+        if (downloaded != null && downloaded.exists()) {
+            file = downloaded
+            isLoading = false
+            totalDurationMs = mediaItem.durationMs?.toInt() ?: 0
+        } else {
+            hasError = true
+            isLoading = false
+        }
+    }
+
+    LaunchedEffect(isPlaying) {
+        while (isPlaying) {
+            currentPosMs = player.currentPosition()
+            if (totalDurationMs <= 0) {
+                totalDurationMs = player.duration()
+            }
+            delay(200L)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(TokyoBackground.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+            .border(1.dp, TokyoSecondary.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(Icons.Default.Mic, null, tint = TokyoSecondary, modifier = Modifier.size(18.dp))
+            Text(
+                text = stringResource(R.string.media_audio_player_title),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = TokyoOnBackground
+            )
+        }
+
+        if (isLoading) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(vertical = 8.dp)
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = TokyoSecondary, strokeWidth = 2.dp)
+                Text(stringResource(R.string.media_downloading), style = MaterialTheme.typography.bodySmall, color = TokyoOnSurface)
+            }
+        } else if (hasError || file == null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(stringResource(R.string.media_download_error), style = MaterialTheme.typography.bodySmall, color = TokyoError)
+                IconButton(onClick = {
+                    isLoading = true
+                    hasError = false
+                }) {
+                    Icon(Icons.Default.Refresh, null, tint = TokyoSecondary, modifier = Modifier.size(18.dp))
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                IconButton(
+                    onClick = {
+                        if (isPlaying) {
+                            player.pause()
+                            isPlaying = false
+                        } else {
+                            val f = file
+                            if (f != null && f.exists()) {
+                                player.play(f) {
+                                    isPlaying = false
+                                    currentPosMs = 0
+                                }
+                                isPlaying = true
+                                if (totalDurationMs <= 0) totalDurationMs = player.duration()
+                            }
+                        }
+                    }
+                ) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = TokyoSecondary,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+
+                val curSec = currentPosMs / 1000
+                val totSec = (if (totalDurationMs > 0) totalDurationMs else (mediaItem.durationMs?.toInt() ?: 1000)) / 1000
+                val progress = if (totSec > 0) (curSec.toFloat() / totSec.toFloat()).coerceIn(0f, 1f) else 0f
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Slider(
+                        value = progress,
+                        onValueChange = {},
+                        enabled = false,
+                        colors = SliderDefaults.colors(
+                            disabledThumbColor = TokyoSecondary,
+                            disabledActiveTrackColor = TokyoSecondary,
+                            disabledInactiveTrackColor = TokyoSecondary.copy(alpha = 0.25f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = String.format(java.util.Locale.US, "%02d:%02d", curSec / 60, curSec % 60),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TokyoOnSurface
+                        )
+                        Text(
+                            text = String.format(java.util.Locale.US, "%02d:%02d", totSec / 60, totSec % 60),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TokyoOnSurface
+                        )
+                    }
+                }
+            }
         }
     }
 }

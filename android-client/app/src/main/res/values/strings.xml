@@ -250,9 +250,32 @@
     <string name="idea_family_history_title">Семейная история</string>
     <string name="idea_family_history_desc">Рассказы предков, родовые традиции и важные моменты, которые нельзя забывать.</string>
     <string name="idea_photo_archive_title">Фотоархив молодости</string>
-    <string name="idea_photo_archive_desc">Коллекция памятных снимков и атмосферы (Скоро)</string>
+    <string name="idea_photo_archive_desc">Коллекция памятных снимков и атмосферы</string>
     <string name="idea_voice_2026_title">Голос из 2026 года</string>
-    <string name="idea_voice_2026_desc">Аудиозапись живого голоса, смеха и интонаций (Скоро)</string>
+    <string name="idea_voice_2026_desc">Аудиозапись живого голоса, смеха и интонаций</string>
+
+    <!-- Медиа-вложения (Фото и Голос) -->
+    <string name="attachment_photo_title">Фотография</string>
+    <string name="btn_take_photo">Снять на камеру</string>
+    <string name="btn_choose_photo">Выбрать из галереи</string>
+    <string name="btn_remove_photo">Удалить фото</string>
+    <string name="photo_attached_hint">Фотография прикреплена (JPEG до 800 КБ)</string>
+    <string name="attachment_voice_title">Голосовое послание</string>
+    <string name="btn_record_voice">Начать запись голоса</string>
+    <string name="btn_stop_recording">Остановить запись</string>
+    <string name="btn_play_voice">Прослушать</string>
+    <string name="btn_pause_voice">Пауза</string>
+    <string name="btn_delete_voice">Удалить запись</string>
+    <string name="voice_recording_timer_format">Запись: %1$02d:%2$02d / 01:00</string>
+    <string name="voice_recorded_format">Голосовая запись готова (%1$d сек)</string>
+    <string name="permission_record_audio_rationale">Для записи голосового послания в капсулу времени требуется доступ к микрофону.</string>
+    <string name="permission_record_audio_denied">В доступе к микрофону отказано. Разрешите доступ в настройках приложения.</string>
+    <string name="media_section_title">Вложения капсулы</string>
+    <string name="media_downloading">Загрузка вложений…</string>
+    <string name="media_download_error">Не удалось загрузить медиа</string>
+    <string name="media_photo_caption">Фотография из капсулы (нажмите для просмотра)</string>
+    <string name="media_audio_player_title">Голосовое послание</string>
+    <string name="btn_close_preview">Закрыть</string>
 
     <!-- Settings Screen («Чувствуй себя как дома») -->
     <string name="settings_screen_title">Настройки</string>

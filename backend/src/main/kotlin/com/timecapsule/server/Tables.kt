@@ -75,3 +75,16 @@ object Blocks : Table("blocks") {
 
     override val primaryKey = PrimaryKey(blockerId, blockedUserId)
 }
+
+object CapsuleMedia : Table("capsule_media") {
+    val id = varchar("id", 36)
+    val capsuleId = varchar("capsule_id", 36).references(Capsules.id, onDelete = ReferenceOption.CASCADE)
+    val kind = varchar("kind", 16) // "PHOTO" or "VOICE"
+    val mime = varchar("mime", 64) // "image/jpeg" or "audio/mp4"
+    val sizeBytes = long("size_bytes")
+    val durationMs = long("duration_ms").nullable()
+    val encryptedBytes = binary("encrypted_bytes")
+    val createdAt = long("created_at")
+
+    override val primaryKey = PrimaryKey(id)
+}

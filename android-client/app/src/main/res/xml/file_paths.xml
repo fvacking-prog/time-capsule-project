@@ -3,5 +3,8 @@
     <cache-path
         name="apk_updates"
         path="apk-updates/" />
+    <cache-path
+        name="capsule_media"
+        path="capsule-media/" />
 </paths>
 

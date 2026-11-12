@@ -252,7 +252,7 @@ fun Application.installSerializationAndErrors() {
 
 fun migrateDatabase() {
     transaction {
-        SchemaUtils.createMissingTablesAndColumns(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
+        SchemaUtils.createMissingTablesAndColumns(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks, CapsuleMedia)
 
         // Migrating existing capsules created before invite_code was introduced
         val capsulesWithoutCode = Capsules

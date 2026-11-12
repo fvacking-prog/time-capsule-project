@@ -61,22 +61,20 @@ object CryptoUtils {
         parseAesKey(resolveConfiguredKey())
     }
 
-    fun encrypt(plain: String): String {
+    fun encryptBytes(plainBytes: ByteArray): ByteArray {
         val iv = ByteArray(IV_LENGTH_BYTES).also { secureRandom.nextBytes(it) }
         val cipher = Cipher.getInstance(ALGORITHM)
         cipher.init(Cipher.ENCRYPT_MODE, secretKey, GCMParameterSpec(TAG_LENGTH_BITS, iv))
 
-        val cipherBytes = cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
+        val cipherBytes = cipher.doFinal(plainBytes)
         val combined = ByteArray(iv.size + cipherBytes.size)
         System.arraycopy(iv, 0, combined, 0, iv.size)
         System.arraycopy(cipherBytes, 0, combined, iv.size, cipherBytes.size)
-
-        return Base64.getEncoder().encodeToString(combined)
+        return combined
     }
 
-    fun decrypt(token: String): String {
-        val combined = Base64.getDecoder().decode(token)
-        require(combined.size > IV_LENGTH_BYTES) { "Invalid encrypted token" }
+    fun decryptBytes(combined: ByteArray): ByteArray {
+        require(combined.size > IV_LENGTH_BYTES) { "Invalid encrypted payload" }
 
         val iv = combined.copyOfRange(0, IV_LENGTH_BYTES)
         val cipherBytes = combined.copyOfRange(IV_LENGTH_BYTES, combined.size)
@@ -84,7 +82,17 @@ object CryptoUtils {
         val cipher = Cipher.getInstance(ALGORITHM)
         cipher.init(Cipher.DECRYPT_MODE, secretKey, GCMParameterSpec(TAG_LENGTH_BITS, iv))
 
-        val plainBytes = cipher.doFinal(cipherBytes)
+        return cipher.doFinal(cipherBytes)
+    }
+
+    fun encrypt(plain: String): String {
+        val encrypted = encryptBytes(plain.toByteArray(Charsets.UTF_8))
+        return Base64.getEncoder().encodeToString(encrypted)
+    }
+
+    fun decrypt(token: String): String {
+        val combined = Base64.getDecoder().decode(token)
+        val plainBytes = decryptBytes(combined)
         return String(plainBytes, Charsets.UTF_8)
     }
 }

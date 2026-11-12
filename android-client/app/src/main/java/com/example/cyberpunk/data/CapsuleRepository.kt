@@ -46,6 +46,7 @@ interface CapsuleRepository {
     suspend fun searchUsers(query: String = ""): List<UserDto>
     suspend fun getCapsules(): List<CapsuleDto>
     suspend fun getCapsule(id: String): CapsuleDto
+    suspend fun downloadCapsuleMedia(capsuleId: String, mediaId: String): ByteArray
     suspend fun createCapsule(request: CreateCapsuleRequest): CapsuleDto
     suspend fun checkIn(capsuleId: String, request: CheckInRequest): CapsuleDto
     suspend fun joinCapsule(inviteCode: String): CapsuleDto
@@ -206,6 +207,14 @@ class RemoteCapsuleRepository(
     override suspend fun getCapsule(id: String): CapsuleDto {
         return executeWithAuthCheck {
             client.get(endpoint("/api/v1/capsules/$id")) {
+                attachBearerToken()
+            }.body()
+        }
+    }
+
+    override suspend fun downloadCapsuleMedia(capsuleId: String, mediaId: String): ByteArray {
+        return executeWithAuthCheck {
+            client.get(endpoint("/api/v1/capsules/$capsuleId/media/$mediaId")) {
                 attachBearerToken()
             }.body()
         }

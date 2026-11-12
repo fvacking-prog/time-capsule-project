@@ -589,6 +589,10 @@ fun TimeCapsuleApp(
                     },
                     showLocationDisabledDialog = uiState.showLocationDisabledDialog,
                     onDismissLocationDisabledDialog = capsuleViewModel::dismissLocationDisabledDialog,
+                    onPhotoSelected = capsuleViewModel::setAttachedPhoto,
+                    onPhotoRemoved = capsuleViewModel::removeAttachedPhoto,
+                    onVoiceRecorded = capsuleViewModel::setAttachedVoice,
+                    onVoiceRemoved = capsuleViewModel::removeAttachedVoice,
                     onRadiusChange = capsuleViewModel::updateCreateRadius,
                     onParticipantSearchQueryChange = capsuleViewModel::updateParticipantSearchQuery,
                     onToggleParticipant = capsuleViewModel::toggleParticipantSelection,
@@ -666,7 +670,14 @@ fun TimeCapsuleApp(
             composable(ROUTE_TIMELINE) {
                 CapsuleStagesTimeline(
                     capsule = uiState.selectedCapsule,
-                    onBackClick = { navController.popBackStack() }
+                    onBackClick = { navController.popBackStack() },
+                    onDownloadMedia = { mediaId, mime ->
+                        capsuleViewModel.getOrDownloadMediaFile(
+                            capsuleId = uiState.selectedCapsule?.id.orEmpty(),
+                            mediaId = mediaId,
+                            mime = mime
+                        )
+                    }
                 )
             }
         }

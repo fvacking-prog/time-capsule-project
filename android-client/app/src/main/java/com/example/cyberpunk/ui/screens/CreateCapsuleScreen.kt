@@ -3,8 +3,11 @@ package com.example.cyberpunk.ui.screens
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.provider.Settings
+import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -35,14 +38,18 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -78,6 +85,7 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -95,7 +103,12 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import com.example.cyberpunk.R
+import com.example.cyberpunk.data.MediaHelper
 import com.example.cyberpunk.data.UnlockDateTimeHelper
+import com.example.cyberpunk.data.VoicePlayerHelper
+import com.example.cyberpunk.data.VoiceRecorderHelper
+import kotlinx.coroutines.delay
+import java.io.File
 import com.example.cyberpunk.ui.theme.TokyoAccent
 import com.example.cyberpunk.ui.theme.TokyoBackground
 import com.example.cyberpunk.ui.theme.TokyoError
@@ -137,6 +150,10 @@ fun CreateCapsuleScreen(
     onShowPermissionDeniedSnackbar: () -> Unit = {},
     showLocationDisabledDialog: Boolean = false,
     onDismissLocationDisabledDialog: () -> Unit = {},
+    onPhotoSelected: (ByteArray, String) -> Unit = { _, _ -> },
+    onPhotoRemoved: () -> Unit = {},
+    onVoiceRecorded: (File, String, Long) -> Unit = { _, _, _ -> },
+    onVoiceRemoved: () -> Unit = {},
     onRadiusChange: (Float) -> Unit,
     onParticipantSearchQueryChange: (String) -> Unit,
     onToggleParticipant: (String) -> Unit,
@@ -152,9 +169,84 @@ fun CreateCapsuleScreen(
     val creatorId = currentUserId ?: ""
     val context = LocalContext.current
 
+    val voiceRecorder = remember { VoiceRecorderHelper(context) }
+    val voicePlayer = remember { VoicePlayerHelper() }
+    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
+    var isRecordingVoice by remember { mutableStateOf(false) }
+    var recordingSeconds by remember { mutableIntStateOf(0) }
+    var isPlayingVoice by remember { mutableStateOf(false) }
+
     DisposableEffect(Unit) {
         onDispose {
             onCancelLocationFetch()
+            voiceRecorder.release()
+            voicePlayer.release()
+        }
+    }
+
+    val takePictureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        val uri = pendingCameraUri
+        if (success && uri != null) {
+            val processed = MediaHelper.processAndCompressImage(context, uri)
+            if (processed != null) {
+                onPhotoSelected(processed.first, processed.second)
+            }
+        }
+    }
+
+    val pickVisualMediaLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            val processed = MediaHelper.processAndCompressImage(context, uri)
+            if (processed != null) {
+                onPhotoSelected(processed.first, processed.second)
+            }
+        }
+    }
+
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            val file = voiceRecorder.startRecording(
+                onMaxDurationReached = {
+                    val durationMs = voiceRecorder.stopRecording()
+                    isRecordingVoice = false
+                    val voiceFile = voiceRecorder.outputFile
+                    if (voiceFile != null && voiceFile.exists()) {
+                        val base64 = Base64.encodeToString(voiceFile.readBytes(), Base64.NO_WRAP)
+                        onVoiceRecorded(voiceFile, base64, durationMs)
+                    }
+                }
+            )
+            if (file != null) {
+                isRecordingVoice = true
+                recordingSeconds = 0
+            }
+        } else {
+            onShowPermissionDeniedSnackbar()
+        }
+    }
+
+    LaunchedEffect(isRecordingVoice) {
+        if (isRecordingVoice) {
+            recordingSeconds = 0
+            while (isRecordingVoice && recordingSeconds < 60) {
+                delay(1000L)
+                recordingSeconds++
+            }
+            if (isRecordingVoice && recordingSeconds >= 60) {
+                val durationMs = voiceRecorder.stopRecording()
+                isRecordingVoice = false
+                val voiceFile = voiceRecorder.outputFile
+                if (voiceFile != null && voiceFile.exists()) {
+                    val base64 = Base64.encodeToString(voiceFile.readBytes(), Base64.NO_WRAP)
+                    onVoiceRecorded(voiceFile, base64, durationMs)
+                }
+            }
         }
     }
 
@@ -468,22 +560,30 @@ fun CreateCapsuleScreen(
                         )
                     )
 
-                    // Фото (Скоро)
+                    // Фото (Active)
                     FilterChip(
-                        selected = false,
-                        onClick = { },
-                        enabled = false,
-                        label = { Text("${stringResource(R.string.type_photo)} • ${stringResource(R.string.badge_soon)}") },
-                        leadingIcon = { Icon(Icons.Default.PhotoCamera, null, modifier = Modifier.size(16.dp)) }
+                        selected = formState.kind == "PHOTO",
+                        onClick = { onKindChange("PHOTO") },
+                        label = { Text(stringResource(R.string.type_photo)) },
+                        leadingIcon = { Icon(Icons.Default.PhotoCamera, null, modifier = Modifier.size(16.dp)) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = TokyoPrimary.copy(alpha = 0.2f),
+                            selectedLabelColor = TokyoPrimary,
+                            selectedLeadingIconColor = TokyoPrimary
+                        )
                     )
 
-                    // Голос (Скоро)
+                    // Голос (Active)
                     FilterChip(
-                        selected = false,
-                        onClick = { },
-                        enabled = false,
-                        label = { Text("${stringResource(R.string.type_voice)} • ${stringResource(R.string.badge_soon)}") },
-                        leadingIcon = { Icon(Icons.Default.Mic, null, modifier = Modifier.size(16.dp)) }
+                        selected = formState.kind == "VOICE",
+                        onClick = { onKindChange("VOICE") },
+                        label = { Text(stringResource(R.string.type_voice)) },
+                        leadingIcon = { Icon(Icons.Default.Mic, null, modifier = Modifier.size(16.dp)) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = TokyoPrimary.copy(alpha = 0.2f),
+                            selectedLabelColor = TokyoPrimary,
+                            selectedLeadingIconColor = TokyoPrimary
+                        )
                     )
                 }
             }
@@ -542,6 +642,274 @@ fun CreateCapsuleScreen(
                         unfocusedBorderColor = TokyoPrimary.copy(alpha = 0.25f)
                     )
                 )
+
+                // ВЛОЖЕНИЕ: ФОТОГРАФИЯ
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(TokyoBackground.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .border(1.dp, TokyoPrimary.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.PhotoCamera, null, tint = TokyoPrimary, modifier = Modifier.size(18.dp))
+                        Text(
+                            text = stringResource(R.string.attachment_photo_title),
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                color = TokyoOnBackground
+                            )
+                        )
+                    }
+
+                    if (formState.attachedPhotoBytes == null) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    val pair = MediaHelper.createCameraTempFile(context)
+                                    pendingCameraUri = pair.second
+                                    takePictureLauncher.launch(pair.second)
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = TokyoPrimary),
+                                border = BorderStroke(1.dp, TokyoPrimary.copy(alpha = 0.4f))
+                            ) {
+                                Icon(Icons.Default.PhotoCamera, null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(stringResource(R.string.btn_take_photo), style = MaterialTheme.typography.labelSmall)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    pickVisualMediaLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = TokyoAccent),
+                                border = BorderStroke(1.dp, TokyoAccent.copy(alpha = 0.4f))
+                            ) {
+                                Icon(Icons.Default.Image, null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(stringResource(R.string.btn_choose_photo), style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                AsyncImage(
+                                    model = formState.attachedPhotoBytes,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .border(1.dp, TokyoPrimary.copy(alpha = 0.5f), RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                                Column {
+                                    Text(
+                                        text = stringResource(R.string.photo_attached_hint),
+                                        style = MaterialTheme.typography.bodySmall.copy(color = TokyoOnBackground, fontWeight = FontWeight.Medium)
+                                    )
+                                    Text(
+                                        text = "Размер: ${(formState.attachedPhotoBytes.size / 1024)} КБ",
+                                        style = MaterialTheme.typography.labelSmall.copy(color = TokyoSuccess)
+                                    )
+                                }
+                            }
+                            TextButton(
+                                onClick = onPhotoRemoved,
+                                colors = ButtonDefaults.textButtonColors(contentColor = TokyoError)
+                            ) {
+                                Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(stringResource(R.string.btn_remove_photo), style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+
+                // ВЛОЖЕНИЕ: ГОЛОСОВОЕ СООБЩЕНИЕ
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(TokyoBackground.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .border(1.dp, TokyoSecondary.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Mic, null, tint = TokyoSecondary, modifier = Modifier.size(18.dp))
+                        Text(
+                            text = stringResource(R.string.attachment_voice_title),
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                color = TokyoOnBackground
+                            )
+                        )
+                    }
+
+                    if (isRecordingVoice) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(TokyoError.copy(alpha = 0.15f), RoundedCornerShape(10.dp))
+                                .border(1.dp, TokyoError.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(TokyoError)
+                                )
+                                Text(
+                                    text = String.format(
+                                        java.util.Locale.US,
+                                        "Запись: %02d:%02d / 01:00",
+                                        recordingSeconds / 60,
+                                        recordingSeconds % 60
+                                    ),
+                                    style = MaterialTheme.typography.bodyMedium.copy(color = TokyoError, fontWeight = FontWeight.Bold)
+                                )
+                            }
+
+                            Button(
+                                onClick = {
+                                    val durationMs = voiceRecorder.stopRecording()
+                                    isRecordingVoice = false
+                                    val voiceFile = voiceRecorder.outputFile
+                                    if (voiceFile != null && voiceFile.exists()) {
+                                        val base64 = Base64.encodeToString(voiceFile.readBytes(), Base64.NO_WRAP)
+                                        onVoiceRecorded(voiceFile, base64, durationMs)
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = TokyoError, contentColor = TokyoBackground),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(Icons.Default.Stop, null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(stringResource(R.string.btn_stop_recording), style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    } else if (formState.attachedVoiceBase64 != null) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        if (isPlayingVoice) {
+                                            voicePlayer.pause()
+                                            isPlayingVoice = false
+                                        } else {
+                                            val file = formState.attachedVoiceFile
+                                            if (file != null && file.exists()) {
+                                                voicePlayer.play(file) {
+                                                    isPlayingVoice = false
+                                                }
+                                                isPlayingVoice = true
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = if (isPlayingVoice) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                        contentDescription = null,
+                                        tint = TokyoSecondary,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+
+                                val durationSec = ((formState.attachedVoiceDurationMs ?: 1000L) / 1000L).coerceAtLeast(1L)
+                                Text(
+                                    text = stringResource(R.string.voice_recorded_format, durationSec),
+                                    style = MaterialTheme.typography.bodySmall.copy(color = TokyoOnBackground, fontWeight = FontWeight.Medium)
+                                )
+                            }
+
+                            TextButton(
+                                onClick = {
+                                    voicePlayer.stop()
+                                    isPlayingVoice = false
+                                    onVoiceRemoved()
+                                },
+                                colors = ButtonDefaults.textButtonColors(contentColor = TokyoError)
+                            ) {
+                                Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(stringResource(R.string.btn_delete_voice), style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = {
+                                val hasAudioPerm = ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.RECORD_AUDIO
+                                ) == PackageManager.PERMISSION_GRANTED
+
+                                if (hasAudioPerm) {
+                                    val file = voiceRecorder.startRecording(
+                                        onMaxDurationReached = {
+                                            val durationMs = voiceRecorder.stopRecording()
+                                            isRecordingVoice = false
+                                            val voiceFile = voiceRecorder.outputFile
+                                            if (voiceFile != null && voiceFile.exists()) {
+                                                val base64 = Base64.encodeToString(voiceFile.readBytes(), Base64.NO_WRAP)
+                                                onVoiceRecorded(voiceFile, base64, durationMs)
+                                            }
+                                        }
+                                    )
+                                    if (file != null) {
+                                        isRecordingVoice = true
+                                        recordingSeconds = 0
+                                    }
+                                } else {
+                                    audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = TokyoSecondary),
+                            border = BorderStroke(1.dp, TokyoSecondary.copy(alpha = 0.4f))
+                        ) {
+                            Icon(Icons.Default.Mic, null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(stringResource(R.string.btn_record_voice))
+                        }
+                    }
+                }
 
                 // Recipient picker (@handle chips, empty = self)
                 if (!formState.isGeoLocked) {

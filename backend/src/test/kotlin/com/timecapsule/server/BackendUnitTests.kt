@@ -5,6 +5,8 @@ import com.timecapsule.shared.AuthResponse
 import com.timecapsule.shared.BlockUserRequest
 import com.timecapsule.shared.CapsuleDto
 import com.timecapsule.shared.CheckHandleResponse
+import com.timecapsule.shared.CheckInRequest
+import com.timecapsule.shared.CreateAttachmentRequest
 import com.timecapsule.shared.CreateCapsuleRequest
 import com.timecapsule.shared.CreateStageRequest
 import com.timecapsule.shared.ParticipantStatusDto
@@ -16,6 +18,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.client.statement.readBytes
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -34,6 +37,7 @@ import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
+import java.util.Base64
 import java.util.UUID
 import kotlin.math.abs
 import kotlin.test.Test
@@ -238,7 +242,7 @@ class BackendUnitTests {
         )
 
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks, CapsuleMedia)
 
             Users.insert {
                 it[id] = "user_a"
@@ -291,7 +295,7 @@ class BackendUnitTests {
         )
 
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks, CapsuleMedia)
 
             Users.insert { it[id] = "user_a"; it[username] = "UserA" }
             Users.insert { it[id] = "user_b"; it[username] = "UserB" }
@@ -417,7 +421,7 @@ class BackendUnitTests {
         )
 
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks, CapsuleMedia)
 
             Users.insert {
                 it[id] = "user_alice"
@@ -516,7 +520,7 @@ class BackendUnitTests {
         )
 
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks, CapsuleMedia)
 
             Users.insert {
                 it[id] = "user_x"
@@ -583,7 +587,7 @@ class BackendUnitTests {
         )
 
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks, CapsuleMedia)
 
             Users.insert {
                 it[id] = "user_target"
@@ -744,7 +748,7 @@ class BackendUnitTests {
         )
 
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks, CapsuleMedia)
 
             Users.insert {
                 it[id] = "user_u1"
@@ -915,7 +919,7 @@ class BackendUnitTests {
         )
         val capId = "cap_load_test"
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks, CapsuleMedia)
             Users.insert {
                 it[id] = "user_creator"
                 it[username] = "Creator"
@@ -997,7 +1001,7 @@ class BackendUnitTests {
         var tokenA = ""
         var tokenB = ""
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks, CapsuleMedia)
             Users.insert {
                 it[id] = "user_h1"
                 it[username] = "Alice"
@@ -1124,7 +1128,7 @@ class BackendUnitTests {
         )
         var selfToken = ""
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks, CapsuleMedia)
             Users.insert {
                 it[id] = "self_user"
                 it[username] = "Alice Self"
@@ -1197,7 +1201,7 @@ class BackendUnitTests {
             driver = "org.h2.Driver"
         )
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks, CapsuleMedia)
             Users.insert {
                 it[id] = "existing_uid"
                 it[username] = "Old Name"
@@ -1261,7 +1265,7 @@ class BackendUnitTests {
         var bobToken = ""
         var charlieToken = ""
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks, CapsuleMedia)
             Users.insert {
                 it[id] = "user_alice"
                 it[username] = "Alice"
@@ -1436,7 +1440,7 @@ class BackendUnitTests {
         var aliceToken = ""
         var bobToken = ""
         transaction(testDb) {
-            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks)
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks, CapsuleMedia)
             Users.insert {
                 it[id] = "spammer"
                 it[username] = "Spammer"
@@ -1686,5 +1690,248 @@ class BackendUnitTests {
             appVersionProviderFn = prevProvider
         }
     }
+
+    @Test
+    fun `CryptoUtils encryptBytes and decryptBytes round-trip preserves byte content and generates different IV each time`() {
+        val sampleData = "Секретное аудиосообщение и фото 2026".toByteArray(Charsets.UTF_8)
+        val encrypted1 = CryptoUtils.encryptBytes(sampleData)
+        val encrypted2 = CryptoUtils.encryptBytes(sampleData)
+
+        // Разные IV на каждый вызов шифрования
+        assertFalse(encrypted1.contentEquals(encrypted2))
+
+        val decrypted1 = CryptoUtils.decryptBytes(encrypted1)
+        val decrypted2 = CryptoUtils.decryptBytes(encrypted2)
+
+        assertTrue(sampleData.contentEquals(decrypted1))
+        assertTrue(sampleData.contentEquals(decrypted2))
+    }
+
+    @Test
+    fun `validateCreateCapsuleRequest validates attachments count, kinds, mimes, sizes and file signatures`() {
+        val now = System.currentTimeMillis()
+        val validJpegBytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte(), 0x00, 0x10, 'J'.code.toByte(), 'F'.code.toByte())
+        val validMp4Bytes = byteArrayOf(0x00, 0x00, 0x00, 0x14, 'f'.code.toByte(), 't'.code.toByte(), 'y'.code.toByte(), 'p'.code.toByte(), 'm'.code.toByte(), 'p'.code.toByte(), '4'.code.toByte(), '2'.code.toByte())
+
+        val validJpegBase64 = Base64.getEncoder().encodeToString(validJpegBytes)
+        val validMp4Base64 = Base64.getEncoder().encodeToString(validMp4Bytes)
+
+        val baseReq = CreateCapsuleRequest(
+            title = "Media Test",
+            stages = listOf(CreateStageRequest(1, now + 120_000L, "Secret")),
+            isGeoLocked = false,
+            attachments = listOf(
+                CreateAttachmentRequest(kind = "PHOTO", mime = "image/jpeg", dataBase64 = validJpegBase64),
+                CreateAttachmentRequest(kind = "VOICE", mime = "audio/mp4", dataBase64 = validMp4Base64, durationMs = 15_000L)
+            )
+        )
+
+        // Валидный запрос с 1 фото и 1 голосом проходит
+        validateCreateCapsuleRequest(baseReq, "user_alice")
+
+        // 2 фото отклоняются
+        val twoPhotos = baseReq.copy(
+            attachments = listOf(
+                CreateAttachmentRequest(kind = "PHOTO", mime = "image/jpeg", dataBase64 = validJpegBase64),
+                CreateAttachmentRequest(kind = "PHOTO", mime = "image/jpeg", dataBase64 = validJpegBase64)
+            )
+        )
+        assertFailsWith<IllegalArgumentException> { validateCreateCapsuleRequest(twoPhotos, "user_alice") }
+
+        // 2 голоса отклоняются
+        val twoVoices = baseReq.copy(
+            attachments = listOf(
+                CreateAttachmentRequest(kind = "VOICE", mime = "audio/mp4", dataBase64 = validMp4Base64),
+                CreateAttachmentRequest(kind = "VOICE", mime = "audio/mp4", dataBase64 = validMp4Base64)
+            )
+        )
+        assertFailsWith<IllegalArgumentException> { validateCreateCapsuleRequest(twoVoices, "user_alice") }
+
+        // Неверный MIME для фото
+        val wrongPhotoMime = baseReq.copy(
+            attachments = listOf(CreateAttachmentRequest(kind = "PHOTO", mime = "image/png", dataBase64 = validJpegBase64))
+        )
+        assertFailsWith<IllegalArgumentException> { validateCreateCapsuleRequest(wrongPhotoMime, "user_alice") }
+
+        // Неверная сигнатура JPEG
+        val badJpegSig = Base64.getEncoder().encodeToString(byteArrayOf(0x00, 0x01, 0x02, 0x03))
+        val badJpegReq = baseReq.copy(
+            attachments = listOf(CreateAttachmentRequest(kind = "PHOTO", mime = "image/jpeg", dataBase64 = badJpegSig))
+        )
+        assertFailsWith<IllegalArgumentException> { validateCreateCapsuleRequest(badJpegReq, "user_alice") }
+
+        // Неверная сигнатура MP4
+        val badMp4Sig = Base64.getEncoder().encodeToString(byteArrayOf(0x00, 0x00, 0x00, 0x14, 'n'.code.toByte(), 'o'.code.toByte(), 'p'.code.toByte(), 'e'.code.toByte()))
+        val badMp4Req = baseReq.copy(
+            attachments = listOf(CreateAttachmentRequest(kind = "VOICE", mime = "audio/mp4", dataBase64 = badMp4Sig))
+        )
+        assertFailsWith<IllegalArgumentException> { validateCreateCapsuleRequest(badMp4Req, "user_alice") }
+
+        // Превышение размера фото (> 800 КБ)
+        val oversizedPhoto = ByteArray(800 * 1024 + 10)
+        oversizedPhoto[0] = 0xFF.toByte()
+        oversizedPhoto[1] = 0xD8.toByte()
+        oversizedPhoto[2] = 0xFF.toByte()
+        val oversizedPhotoReq = baseReq.copy(
+            attachments = listOf(CreateAttachmentRequest(kind = "PHOTO", mime = "image/jpeg", dataBase64 = Base64.getEncoder().encodeToString(oversizedPhoto)))
+        )
+        assertFailsWith<IllegalArgumentException> { validateCreateCapsuleRequest(oversizedPhotoReq, "user_alice") }
+
+        // Превышение размера голоса (> 1 МБ)
+        val oversizedVoice = ByteArray(1024 * 1024 + 10)
+        oversizedVoice[4] = 'f'.code.toByte()
+        oversizedVoice[5] = 't'.code.toByte()
+        oversizedVoice[6] = 'y'.code.toByte()
+        oversizedVoice[7] = 'p'.code.toByte()
+        val oversizedVoiceReq = baseReq.copy(
+            attachments = listOf(CreateAttachmentRequest(kind = "VOICE", mime = "audio/mp4", dataBase64 = Base64.getEncoder().encodeToString(oversizedVoice)))
+        )
+        assertFailsWith<IllegalArgumentException> { validateCreateCapsuleRequest(oversizedVoiceReq, "user_alice") }
+    }
+
+    @Test
+    fun `media download route enforces access control, opening condition, cache-control no-store, and user data deletion`() = testApplication {
+        val testDb = Database.connect(
+            url = "jdbc:h2:mem:test_media_${UUID.randomUUID()};DB_CLOSE_DELAY=-1",
+            driver = "org.h2.Driver"
+        )
+        val now = System.currentTimeMillis()
+        var capsuleId = ""
+        var photoMediaId = ""
+        val sampleJpeg = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte(), 0x00, 0x10, 'J'.code.toByte(), 'F'.code.toByte())
+
+        transaction(testDb) {
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks, CapsuleMedia)
+
+            Users.insert {
+                it[id] = "user_creator"
+                it[username] = "Creator"
+                it[email] = "creator@gmail.com"
+            }
+            Users.insert {
+                it[id] = "user_recipient"
+                it[username] = "Recipient"
+                it[email] = "recipient@gmail.com"
+            }
+            Users.insert {
+                it[id] = "user_stranger"
+                it[username] = "Stranger"
+                it[email] = "stranger@gmail.com"
+            }
+
+            Sessions.insert {
+                it[token] = "token_creator"
+                it[userId] = "user_creator"
+                it[createdAt] = now
+                it[expiresAt] = now + 100_000L
+            }
+            Sessions.insert {
+                it[token] = "token_recipient"
+                it[userId] = "user_recipient"
+                it[createdAt] = now
+                it[expiresAt] = now + 100_000L
+            }
+            Sessions.insert {
+                it[token] = "token_stranger"
+                it[userId] = "user_stranger"
+                it[createdAt] = now
+                it[expiresAt] = now + 100_000L
+            }
+
+            capsuleId = UUID.randomUUID().toString()
+            Capsules.insert {
+                it[id] = capsuleId
+                it[creatorId] = "user_creator"
+                it[title] = "Locked Media Capsule"
+                it[latitude] = 0.0
+                it[longitude] = 0.0
+                it[radiusMeters] = 50.0
+                it[createdAt] = now
+                it[isGroupCapsule] = false
+                it[inviteCode] = "MED123"
+                it[kind] = "PHOTO"
+                it[recipient] = "Recipient"
+                it[tags] = "media"
+                it[isGeoLocked] = false
+            }
+
+            CapsuleParticipants.insert {
+                it[CapsuleParticipants.capsuleId] = capsuleId
+                it[userId] = "user_creator"
+                it[role] = "CREATOR"
+            }
+            CapsuleParticipants.insert {
+                it[CapsuleParticipants.capsuleId] = capsuleId
+                it[userId] = "user_recipient"
+                it[role] = "RECIPIENT"
+            }
+
+            // Стадия заблокирована в будущем (+1 час)
+            CapsuleStages.insert {
+                it[id] = UUID.randomUUID().toString()
+                it[CapsuleStages.capsuleId] = capsuleId
+                it[stageNumber] = 1
+                it[unlockDate] = now + 3600_000L
+                it[encryptedText] = CryptoUtils.encrypt("Top secret text")
+            }
+
+            photoMediaId = UUID.randomUUID().toString()
+            CapsuleMedia.insert {
+                it[id] = photoMediaId
+                it[CapsuleMedia.capsuleId] = capsuleId
+                it[kind] = "PHOTO"
+                it[mime] = "image/jpeg"
+                it[sizeBytes] = sampleJpeg.size.toLong()
+                it[durationMs] = null
+                it[encryptedBytes] = CryptoUtils.encryptBytes(sampleJpeg)
+                it[createdAt] = now
+            }
+        }
+
+        application {
+            installSerializationAndErrors()
+            routing { capsuleRoutes() }
+        }
+
+        // 1. Посторонний получает 403 Forbidden
+        val strangerResp = client.get("/api/v1/capsules/$capsuleId/media/$photoMediaId") {
+            header(HttpHeaders.Authorization, "Bearer token_stranger")
+        }
+        assertEquals(HttpStatusCode.Forbidden, strangerResp.status)
+
+        // 2. Получатель до наступления даты открытия получает 409 Conflict
+        val recipientEarlyResp = client.get("/api/v1/capsules/$capsuleId/media/$photoMediaId") {
+            header(HttpHeaders.Authorization, "Bearer token_recipient")
+        }
+        assertEquals(HttpStatusCode.Conflict, recipientEarlyResp.status)
+
+        // Переводим дату открытия в прошлое
+        transaction(testDb) {
+            CapsuleStages.update({ CapsuleStages.capsuleId eq capsuleId }) {
+                it[unlockDate] = now - 1000L
+            }
+        }
+
+        // 3. После наступления даты получатель успешно скачивает расшифрованное медиа с Cache-Control: no-store
+        val recipientUnlockedResp = client.get("/api/v1/capsules/$capsuleId/media/$photoMediaId") {
+            header(HttpHeaders.Authorization, "Bearer token_recipient")
+        }
+        assertEquals(HttpStatusCode.OK, recipientUnlockedResp.status)
+        assertEquals("no-store", recipientUnlockedResp.headers[HttpHeaders.CacheControl])
+        assertEquals("image/jpeg", recipientUnlockedResp.headers[HttpHeaders.ContentType])
+        assertTrue(sampleJpeg.contentEquals(recipientUnlockedResp.readBytes()))
+
+        // 4. Удаление данных пользователя удаляет и медиа вложения
+        val deleteResp = client.delete("/api/v1/me/data") {
+            header(HttpHeaders.Authorization, "Bearer token_creator")
+        }
+        assertEquals(HttpStatusCode.OK, deleteResp.status)
+
+        transaction(testDb) {
+            assertEquals(0L, CapsuleMedia.selectAll().where { CapsuleMedia.capsuleId eq capsuleId }.count())
+            assertEquals(0L, Capsules.selectAll().where { Capsules.id eq capsuleId }.count())
+        }
+    }
 }
+
 

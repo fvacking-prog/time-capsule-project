@@ -200,13 +200,14 @@
                 <li><strong>Учётная запись Google:</strong> имя пользователя (display name), адрес электронной почты (email) и ссылка на аватар (photo URL) — исключительно для входа через Google (Credential Manager API) и отображения вашего профиля. Email других пользователей никогда не передаётся посторонним лицам через API.</li>
                 <li><strong>Пользовательский никнейм (@handle):</strong> уникальный псевдоним, который вы выбираете в приложении, чтобы другие пользователи могли находить вас и отправлять капсулы времени.</li>
                 <li><strong>Содержимое капсул:</strong> заголовок, тип послания, теги, дата и время открытия, а также текст секретного послания.</li>
+                <li><strong>Фотографии и голосовые вложения:</strong> при создании капсулы вы можете добровольно прикрепить одну фотографию и одно голосовое сообщение (до 60 секунд). Для записи голоса приложение запрашивает разрешение на доступ к микрофону (<code>RECORD_AUDIO</code>) строго во время нажатия кнопки записи. Для создания фото используется системный интерфейс камеры без постоянного прямого доступа приложения к объективу.</li>
                 <li><strong>Геолокация устройства (GPS):</strong> используется <em>исключительно</em> для гео-капсул во время проверки физического присутствия участников в заданном радиусе (радар и чекины). Мы не отслеживаем перемещения в постоянном фоновом режиме.</li>
             </ul>
 
             <h2>2. Шифрование и безопасность данных</h2>
             <div class="callout">
-                <strong>Криптографическая защита:</strong> Тексты всех этапов капсул шифруются на сервере стойким симметричным алгоритмом <strong>AES-256-GCM</strong>.
-                До наступления назначенной даты и времени открытия (а для гео-капсул — до момента сбора всех участников) секретный текст остаётся зашифрованным и недоступен никому, включая отправителя и администратора базы данных.
+                <strong>Криптографическая защита:</strong> Тексты и медиафайлы (фотографии и аудиозаписи) всех капсул шифруются на сервере стойким симметричным алгоритмом <strong>AES-256-GCM</strong> с уникальным вектором инициализации (IV) для каждого объекта.
+                До наступления назначенной даты и времени открытия (а для гео-капсул — до момента сбора всех участников) секретный текст и медиавложения остаются зашифрованными на сервере и недоступны для скачивания и просмотра никому, включая отправителя и администратора базы данных.
             </div>
 
             <h2>3. Передача третьим лицам и реклама</h2>
@@ -226,7 +227,7 @@
                 Вы имеете полное право удалить свои данные в любой момент. В самом приложении доступна функция безвозвратного удаления:
             </p>
             <p>
-                Перейдите в раздел <strong>«Настройки» → «Удалить все данные»</strong>. При подтверждении все ваши созданные капсулы, сессии авторизации, история участия и профиль удаляются с сервера немедленно и окончательно.
+                Перейдите в раздел <strong>«Настройки» → «Удалить все данные»</strong>. При подтверждении все ваши созданные капсулы, прикреплённые медиафайлы (фото и голос), сессии авторизации, история участия и профиль удаляются с сервера немедленно и окончательно, а локальный кэш медиафайлов очищается на устройстве.
             </p>
 
             <h2>6. Контакты</h2>
@@ -239,13 +240,16 @@
             <div class="en-summary">
                 <h3>Summary in English (Privacy Overview)</h3>
                 <p>
-                    <strong>Time Capsule 2.0</strong> collects your Google account profile (name, email, avatar) for authentication, chosen <code>@handle</code>, capsule contents, and precise GPS location used strictly for geo-locked capsules during participant proximity verification.
+                    <strong>Time Capsule 2.0</strong> collects your Google account profile (name, email, avatar) for authentication, chosen <code>@handle</code>, capsule contents, optional photo/voice attachments, and precise GPS location used strictly for geo-locked capsules during participant proximity verification.
                 </p>
                 <p>
-                    All capsule messages are encrypted on the server with <strong>AES-256-GCM</strong> and remain locked until the scheduled unlock time. We do not sell or share personal data with third parties, and there are no ads or trackers.
+                    Audio recording requires microphone permission (<code>RECORD_AUDIO</code>), and taking photos uses the system camera picker without persistent camera permissions.
                 </p>
                 <p>
-                    You can permanently erase all your data at any time via <strong>Settings &rarr; Delete all data</strong>. Contact: <a href="mailto:fvacking@gmail.com">fvacking@gmail.com</a>. Last updated: November 12, 2026.
+                    All capsule messages and media files are encrypted on the server with <strong>AES-256-GCM</strong> (with a unique IV per file) and remain locked until the scheduled unlock criteria are met. We do not sell or share personal data with third parties, and there are no ads or trackers.
+                </p>
+                <p>
+                    You can permanently erase all your data (including media files) at any time via <strong>Settings &rarr; Delete all data</strong>. Contact: <a href="mailto:fvacking@gmail.com">fvacking@gmail.com</a>. Last updated: November 12, 2026.
                 </p>
             </div>
         </div>
