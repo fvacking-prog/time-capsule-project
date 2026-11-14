@@ -120,4 +120,8 @@
    - Генерация `inviteCode` при создании капсулы и при миграции `migrateDatabase()` выполняется только для групповых капсул (`isGroupCapsule == true`), для личных капсул `inviteCode = null`.
    - В `joinCapsuleByInviteCode` поиск выполняется строго по `Capsules.inviteCode eq rawInviteCode.trim().uppercase()` без полного сканирования `selectAll()`. При попытке присоединиться к личной капсуле (`!isGroupCapsule`) выбрасывается `ForbiddenException` (`403 Forbidden`).
    - Проверка блокировок (`isEitherUserBlocked`) переведена в двусторонний режим (блокировка в любую сторону запрещает `join`, доступ к капсуле, видимость в списке и отправку новых капсул).
+5. **R1.5 (Аудит 7): Усиление `AuthRateLimiter` (последний IP в `X-Forwarded-For`, очистка > 5000 ключей, защита чувствительных маршрутов)**:
+   - В `AuthRateLimiter.extractClientIp` берётся последнее непустое значение заголовка `X-Forwarded-For` (добавляемое доверенным реверс-прокси Render), что исключает обход лимита подделкой начала заголовка клиентом; при отсутствии заголовка используется `remoteHost`.
+   - При превышении 5000 ключей в карте `attempts` автоматически запускается `evictStaleEntries(now)` для удаления устаревших записей старше 60 с.
+   - Лимитер подключён к `/api/v1/auth/google`, `/api/v1/capsules/join`, `PUT /api/v1/users/me/handle` и загрузке медиа в `POST /api/v1/capsules`.
 

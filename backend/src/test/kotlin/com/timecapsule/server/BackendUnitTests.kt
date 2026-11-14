@@ -705,7 +705,21 @@ class BackendUnitTests {
     }
 
     @Test
-    fun `auth rate limiter blocks brute force after 20 attempts`() {
+    fun `auth rate limiter blocks brute force after 20 attempts, uses last X-Forwarded-For and evicts stale keys above 5000`() {
+        AuthRateLimiter.clear()
+        assertEquals(
+            "203.0.113.42",
+            AuthRateLimiter.extractClientIp("10.0.0.1, 172.16.0.2, 203.0.113.42 ", "127.0.0.1")
+        )
+        assertEquals(
+            "127.0.0.1",
+            AuthRateLimiter.extractClientIp(null, "127.0.0.1")
+        )
+        assertEquals(
+            "127.0.0.1",
+            AuthRateLimiter.extractClientIp(" ,  ", "127.0.0.1")
+        )
+
         val testIp = "192.168.1.100"
         for (i in 1..20) {
             AuthRateLimiter.checkOrThrow(testIp)
@@ -713,6 +727,19 @@ class BackendUnitTests {
         assertFailsWith<TooManyRequestsException> {
             AuthRateLimiter.checkOrThrow(testIp)
         }
+
+        // Populate >5000 stale keys and verify eviction on next checkOrThrow
+        AuthRateLimiter.clear()
+        val oldTime = 1_000_000L
+        for (i in 1..5005) {
+            AuthRateLimiter.checkOrThrow("10.0.0.$i", "join", now = oldTime)
+        }
+        assertTrue(AuthRateLimiter.keyCount() > 5000)
+
+        // Trigger checkOrThrow 61s later -> stale keys are evicted
+        AuthRateLimiter.checkOrThrow("10.0.99.1", "join", now = oldTime + 61_000L)
+        assertEquals(1, AuthRateLimiter.keyCount())
+        AuthRateLimiter.clear()
     }
 
     @Test

@@ -197,19 +197,57 @@ object AuthRateLimiter {
     private val attempts = java.util.concurrent.ConcurrentHashMap<String, MutableList<Long>>()
     private const val MAX_ATTEMPTS = 20
     private const val WINDOW_MILLIS = 60_000L
+    private const val MAX_KEYS_BEFORE_CLEANUP = 5_000
 
-    fun checkOrThrow(clientIp: String, route: String = "auth") {
+    fun extractClientIp(xffHeader: String?, remoteHost: String): String {
+        val lastForwarded = xffHeader
+            ?.split(",")
+            ?.map { it.trim() }
+            ?.lastOrNull { it.isNotEmpty() }
+        return lastForwarded ?: remoteHost
+    }
+
+    fun extractClientIp(call: ApplicationCall): String {
+        return extractClientIp(
+            xffHeader = call.request.header("X-Forwarded-For"),
+            remoteHost = call.request.local.remoteHost
+        )
+    }
+
+    fun checkOrThrow(call: ApplicationCall, route: String = "auth") {
+        checkOrThrow(extractClientIp(call), route)
+    }
+
+    fun checkOrThrow(clientIp: String, route: String = "auth", now: Long = System.currentTimeMillis()) {
+        if (attempts.size > MAX_KEYS_BEFORE_CLEANUP) {
+            evictStaleEntries(now)
+        }
         val key = "$clientIp:$route"
-        val now = System.currentTimeMillis()
         val list = attempts.computeIfAbsent(key) { java.util.Collections.synchronizedList(mutableListOf()) }
         synchronized(list) {
             list.removeIf { now - it > WINDOW_MILLIS }
             if (list.size >= MAX_ATTEMPTS) {
-                throw TooManyRequestsException("Слишком много попыток авторизации. Повторите через 60 секунд.")
+                throw TooManyRequestsException("Слишком много попыток. Повторите через 60 секунд.")
             }
             list.add(now)
         }
     }
+
+    fun evictStaleEntries(now: Long = System.currentTimeMillis()) {
+        val iterator = attempts.entries.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            val list = entry.value
+            synchronized(list) {
+                list.removeIf { now - it > WINDOW_MILLIS }
+                if (list.isEmpty()) {
+                    attempts.remove(entry.key, list)
+                }
+            }
+        }
+    }
+
+    internal fun keyCount(): Int = attempts.size
 
     fun clear() {
         attempts.clear()
@@ -234,9 +272,7 @@ fun Route.capsuleRoutes() {
 
     route("/api/v1/auth") {
         post("/google") {
-            val clientIp = call.request.header("X-Forwarded-For")?.split(",")?.firstOrNull()?.trim()
-                ?: call.request.local.remoteHost
-            AuthRateLimiter.checkOrThrow(clientIp, "google")
+            AuthRateLimiter.checkOrThrow(call, "google")
 
             val request = call.receive<GoogleAuthRequest>()
             val rawIdToken = request.idToken.trim()
@@ -390,6 +426,7 @@ fun Route.capsuleRoutes() {
 
         put("/me/handle") {
             val currentUserId = call.requireAuthenticatedUserId()
+            AuthRateLimiter.checkOrThrow(call, "handle")
             val request = call.receive<UpdateHandleRequest>()
             val updated = updateUserHandle(currentUserId, request.handle)
             call.respond(updated)
@@ -433,6 +470,9 @@ fun Route.capsuleRoutes() {
                 throw IllegalArgumentException("Превышен лимит размера тела создания капсулы (максимум 2.5 МБ)")
             }
             val request = call.receive<CreateCapsuleRequest>()
+            if (request.attachments.isNotEmpty()) {
+                AuthRateLimiter.checkOrThrow(call, "media_upload")
+            }
             validateCreateCapsuleRequest(request, authenticatedUserId)
             val capsule = transaction {
                 val now = System.currentTimeMillis()
@@ -616,6 +656,7 @@ fun Route.capsuleRoutes() {
 
         post("/join") {
             val authenticatedUserId = call.requireAuthenticatedUserId()
+            AuthRateLimiter.checkOrThrow(call, "join")
             val request = call.receive<com.timecapsule.shared.JoinCapsuleRequest>()
             val capsule = transaction {
                 joinCapsuleByInviteCode(
