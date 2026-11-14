@@ -420,4 +420,8 @@
     <string name="update_downloading_indeterminate">Загрузка APK и проверка SHA-256…</string>
     <string name="update_permission_explanation">Для установки обновления разрешите «Time Capsule» устанавливать приложения из этого источника в настройках Android, затем вернитесь в приложение.</string>
     <string name="update_artifact_missing">Обновление v%1$s (%2$d) пока недоступно для скачивания (не задан HTTPS-адрес или SHA-256).</string>
+    <string name="share_capsule_section_title">Поделиться и сохранить</string>
+    <string name="share_capsule_section_hint">Неоновая карточка без текста письма или полный PDF-документ</string>
+    <string name="btn_share_card_png">Поделиться карточкой</string>
+    <string name="btn_save_letter_pdf">Сохранить в PDF</string>
 </resources>

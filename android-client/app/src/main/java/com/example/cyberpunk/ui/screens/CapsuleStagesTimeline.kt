@@ -30,8 +30,10 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -57,6 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -64,6 +67,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.example.cyberpunk.R
+import com.example.cyberpunk.data.CapsuleShareHelper
 import com.example.cyberpunk.data.VoicePlayerHelper
 import com.example.cyberpunk.ui.theme.TokyoAccent
 import com.example.cyberpunk.ui.theme.TokyoBackground
@@ -167,6 +171,91 @@ fun CapsuleStagesTimeline(
                 capsule = capsule,
                 onDownloadMedia = onDownloadMedia
             )
+        }
+
+        if (capsule != null && (capsule.status == "OPENED" || capsule.openedAt != null || capsule.hasUnlockedStage)) {
+            CapsuleShareAndExportSection(capsule = capsule)
+        }
+    }
+}
+
+@Composable
+private fun CapsuleShareAndExportSection(
+    capsule: CapsuleDto
+) {
+    val context = LocalContext.current
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = TokyoSurface),
+        border = BorderStroke(1.dp, TokyoBorderGradient)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.share_capsule_section_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = TokyoPrimary
+            )
+            Text(
+                text = stringResource(R.string.share_capsule_section_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = TokyoOnSurface
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Button(
+                    onClick = {
+                        runCatching { CapsuleShareHelper.shareCapsuleCardPng(context, capsule) }
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = TokyoPrimary,
+                        contentColor = TokyoBackground
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = stringResource(R.string.btn_share_card_png),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = stringResource(R.string.btn_share_card_png),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                OutlinedButton(
+                    onClick = {
+                        runCatching { CapsuleShareHelper.shareCapsuleLetterPdf(context, capsule) }
+                    },
+                    modifier = Modifier.weight(1f),
+                    border = BorderStroke(1.dp, TokyoSecondary),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TokyoSecondary),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PictureAsPdf,
+                        contentDescription = stringResource(R.string.btn_save_letter_pdf),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = stringResource(R.string.btn_save_letter_pdf),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
     }
 }

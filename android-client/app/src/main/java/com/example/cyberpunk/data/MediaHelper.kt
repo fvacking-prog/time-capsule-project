@@ -32,6 +32,8 @@ object MediaHelper {
         runCatching {
             val mediaDir = File(context.cacheDir, "capsule-media")
             deletedCount += cleanupStaleFilesInDir(mediaDir, maxAgeMillis, nowMillis)
+            val shareDir = File(context.cacheDir, "capsule-share")
+            deletedCount += cleanupStaleFilesInDir(shareDir, maxAgeMillis, nowMillis)
         }
         return deletedCount
     }

@@ -22,6 +22,6 @@
 | **R3.1 (Функция 1)** | `createdAt` в `CapsuleDto` (`0L` по умолчанию); на Главной живой таймер (`ДД:ЧЧ:ММ:СС` в `STARTED`) и полоса «выдержки» | DONE | `3166181` |
 | **R3.2 (Функция 5)** | Экран «Моя статистика» на Compose Canvas (KPI, тепловая карта за 6 мес, столбцы по месяцам, кольцо по тегам, линия будущих открытий, анимация, пустые состояния, TalkBack, `CapsuleStatsCalculator` + тесты) | DONE | `d2c7458` |
 | **R3.3 (Аудит 12 клиент)** | UI многоэтапных капсул в `CreateCapsuleScreen` (до 5 этапов, дата и текст, валидация дат по порядку) | DONE | `0be0a1a` |
-| **R3.4 (Функция 3, 20-PDF)** | Карточка открытой капсулы (неоновая PNG-картинка без текста письма) и PDF-письмо (`PdfDocument`) + системный Share Sheet через `FileProvider` | TODO | — |
+| **R3.4 (Функция 3, 20-PDF)** | Карточка открытой капсулы (неоновая PNG-картинка без текста письма) и PDF-письмо (`PdfDocument`) + системный Share Sheet через `FileProvider` | DONE | `93b998a` |
 | **R3.5 (Аудит 24, 27, 33 + R3.Verify)** | `contentDescription` для интерактивных иконок и Canvas, touch target 48 dp, `onSurfaceVariant` и контраст (alpha >= 0.78), переиспользование `Path` в `Capsule3DView`; полная проверка фазы и тег `r3-done` | TODO | — |
 | **FINAL** | Обновление `CHANGELOG.md`, `README.md`, `docs/privacy.html`; создание `OVERNIGHT_REPORT.md` и `MORNING_CHECKLIST_2.md` | TODO | — |

@@ -3,6 +3,7 @@ package com.example.cyberpunk
 import com.example.cyberpunk.data.ApiConfig
 import com.example.cyberpunk.data.AppUpdateManager
 import com.example.cyberpunk.data.AppUpdatePolicy
+import com.example.cyberpunk.data.CapsuleShareHelper
 import com.example.cyberpunk.data.CapsuleStatsCalculator
 import com.example.cyberpunk.data.CapsuleUnlockScheduler
 import com.example.cyberpunk.ui.screens.calculateMaturationProgress
@@ -633,6 +634,42 @@ class UnlockAndConfigUnitTest {
                 now
             )
         )
+    }
+
+    @Test
+    fun `CapsuleShareHelper builds share card metadata with title, dates, handle and tags without secret stage text`() {
+        val secretLetter = "TOP_SECRET_PRIVATE_LETTER_DO_NOT_LEAK_ON_PNG"
+        val capsule = CapsuleDto(
+            id = "cap-share-1",
+            creatorId = "u-1",
+            creatorHandle = "alice_cyber",
+            title = "Послание в 2030",
+            latitude = 0.0,
+            longitude = 0.0,
+            radiusMeters = 50.0,
+            isGroupCapsule = false,
+            isFullyUnlocked = true,
+            hasUnlockedStage = true,
+            participants = emptyList(),
+            stages = listOf(
+                CapsuleStageDto(
+                    id = "st-1",
+                    stageNumber = 1,
+                    unlockDate = 1_763_164_800_000L,
+                    isUnlocked = true,
+                    text = secretLetter
+                )
+            ),
+            createdAt = 1_760_000_000_000L,
+            openedAt = 1_763_165_000_000L,
+            tags = listOf("мечта", "#будущее")
+        )
+        val meta = CapsuleShareHelper.buildShareCardMetadata(capsule, ZoneOffset.UTC)
+        assertEquals("Послание в 2030", meta.title)
+        assertEquals("@alice_cyber", meta.creatorHandleDisplay)
+        assertEquals(listOf("#мечта", "#будущее"), meta.tagsDisplay)
+        assertEquals("Открыто этапов: 1 из 1", meta.unlockedStagesSummary)
+        assertFalse(meta.toString().contains(secretLetter))
     }
 }
 

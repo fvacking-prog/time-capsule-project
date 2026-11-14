@@ -6,5 +6,8 @@
     <cache-path
         name="capsule_media"
         path="capsule-media/" />
+    <cache-path
+        name="capsule_share"
+        path="capsule-share/" />
 </paths>
 

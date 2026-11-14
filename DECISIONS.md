@@ -177,6 +177,13 @@
 17. **R3.3 (Аудит 12 клиент): UI многоэтапных капсул в `CreateCapsuleScreen` (до 5 этапов)**:
     - В карточке «Шаг 3: Дата открытия» (`CreateCapsuleScreen`) добавлен список дополнительных этапов (`Этап #2`..`Этап #5`) с выбором даты и времени, полем текста этапа, удалением этапа и кнопкой «+ Добавить этап (N/5)».
     - В `UnlockDateTimeHelper.validateStagesChronologicalOrder`, `CapsuleViewModel.openConfirmSealDialog` и `submitCreateCapsule` добавлена валидация непустого текста всех этапов, минимального упреждения 1 мин и строго хронологического порядка дат (`stage[i] >= stage[i-1]`) как для обычных, так и для гео-капсул.
+18. **R3.4 (Функция 3 и улучшение 20-PDF): Неоновая карточка (PNG без текста письма) и экспорт письма в PDF через `FileProvider`**:
+    - Реализован `CapsuleShareHelper`:
+      - `shareCapsuleCardPng` генерирует карточку 1080×1350 в палитре Tokyo Night (`Bitmap` + `android.graphics.Canvas`) с названием, датой запечатывания и открытия, `@handle` автора и `#тегами` **строго без текста письма** (`stage.text` не читается и не выводится на PNG).
+      - `shareCapsuleLetterPdf` формирует многостраничный PDF-документ (`android.graphics.pdf.PdfDocument`) с метаданными капсулы и полным текстом открытых этапов.
+    - Файлы сохраняются в `cacheDir/capsule-share/` (добавлен путь в `file_paths.xml` и автоочистка старше 24 ч в `MediaHelper`) и передаются в системный Share Sheet (`Intent.ACTION_SEND`) через `FileProvider`.
+    - На экране `CapsuleStagesTimeline` для открытых капсул добавлен блок «Поделиться и сохранить» с кнопками «Поделиться карточкой» и «Сохранить в PDF».
+
 
 
 
