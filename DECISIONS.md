@@ -159,4 +159,9 @@
     - В `UserPreferences` хеширование PIN переведено на `PBKDF2WithHmacSHA256` (`60000` итераций, 256 бит, случайная 16-байтная соль, префикс `pbkdf2_v1:`). При вводе PIN со старым SHA-256 хешем выполняется проверка в постоянное время и прозрачное обновление записи до `pbkdf2_v1:` с новой солью.
     - После 5 неверных попыток ввода PIN включается 30-секундный кулдаун (`PIN_COOLDOWN_MILLIS = 30_000L`), сохраняемый в `DataStore`, с живым обратным отсчётом на экране блокировки.
     - При активной блокировке (`isPinSet && !isPinUnlocked`) `MainActivity` устанавливает флаг окна `WindowManager.LayoutParams.FLAG_SECURE` и рендерит полноэкранный экран блокировки (`EnterPinDialog`) до основного `Scaffold`/`NavHost`, полностью скрывая основной контент. Кнопка «Забыли PIN» выполняет сброс PIN и полный выход из аккаунта (`logout`).
+13. **R2.3 (Аудит 18, 22, 23, 32): Сохранение черновика и URI камеры, автоочистка кэша и APK, фильтрация устаревших координат**:
+    - В `CreateCapsuleScreen` `pendingCameraUri` переведён в `rememberSaveable` (хранение строкового URI), в `CapsuleViewModel` черновик формы создания капсулы сохраняется и восстанавливается через `SavedStateHandle`, а из `AndroidManifest.xml` убрана жёсткая привязка `android:screenOrientation="portrait"`.
+    - В `MediaHelper.cleanupStaleTempFiles` при старте приложения удаляются временные файлы в `cacheDir/capsule-media` старше 24 часов (`MAX_TEMP_FILE_AGE_MS = 86_400_000L`).
+    - В `LocationProvider` последние известные координаты (`lastLocation` / `getLastKnownLocation`) старше 2 минут (`MAX_LAST_KNOWN_LOCATION_AGE_MS = 120_000L`) отбрасываются через `isLocationFresh`.
+    - В `AppUpdateManager.cleanupInstalledApksOnStart` (и при статусе `UP_TO_DATE` в `checkForUpdates`) удаляются скачанные файлы обновлений в `cacheDir/apk-updates/`, если текущая версия приложения уже актуальна.
 

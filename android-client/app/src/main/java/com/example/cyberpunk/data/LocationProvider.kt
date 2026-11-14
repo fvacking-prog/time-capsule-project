@@ -51,6 +51,20 @@ class LocationProvider(context: Context) {
         }
     }
 
+    companion object {
+        const val MAX_LAST_KNOWN_LOCATION_AGE_MS = 2L * 60L * 1000L // 2 minutes
+
+        fun isLocationFresh(
+            locationTimeMillis: Long,
+            nowMillis: Long = System.currentTimeMillis(),
+            maxAgeMillis: Long = MAX_LAST_KNOWN_LOCATION_AGE_MS
+        ): Boolean {
+            if (locationTimeMillis <= 0L) return false
+            val age = nowMillis - locationTimeMillis
+            return age <= maxAgeMillis
+        }
+    }
+
     @SuppressLint("MissingPermission")
     private suspend fun getFusedLocation(): Location? {
         val cancellationTokenSource = CancellationTokenSource()
@@ -58,10 +72,10 @@ class LocationProvider(context: Context) {
             fusedClient.getCurrentLocation(
                 Priority.PRIORITY_HIGH_ACCURACY,
                 cancellationTokenSource.token
-            ).await() ?: fusedClient.lastLocation.await()
+            ).await() ?: fusedClient.lastLocation.await()?.takeIf { isLocationFresh(it.time) }
         } catch (_: Throwable) {
             try {
-                fusedClient.lastLocation.await()
+                fusedClient.lastLocation.await()?.takeIf { isLocationFresh(it.time) }
             } catch (_: Throwable) {
                 null
             }
@@ -90,12 +104,16 @@ class LocationProvider(context: Context) {
             if (loc != null) return loc
         }
 
-        // Проверяем последние известные координаты
+        // Проверяем последние известные координаты (не старше 2 минут)
+        val nowMillis = System.currentTimeMillis()
         var bestLastKnown: Location? = null
         for (provider in providers) {
             try {
                 val last = lm.getLastKnownLocation(provider)
-                if (last != null && (bestLastKnown == null || last.time > bestLastKnown.time)) {
+                if (last != null &&
+                    isLocationFresh(last.time, nowMillis) &&
+                    (bestLastKnown == null || last.time > bestLastKnown.time)
+                ) {
                     bestLastKnown = last
                 }
             } catch (_: Throwable) {

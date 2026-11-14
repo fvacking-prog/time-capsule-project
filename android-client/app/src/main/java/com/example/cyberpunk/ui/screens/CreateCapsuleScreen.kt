@@ -91,6 +91,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -207,7 +208,7 @@ fun CreateCapsuleScreen(
 
     val voiceRecorder = remember { VoiceRecorderHelper(context) }
     val voicePlayer = remember { VoicePlayerHelper() }
-    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingCameraUriString by rememberSaveable { mutableStateOf<String?>(null) }
     var isRecordingVoice by remember { mutableStateOf(false) }
     var recordingSeconds by remember { mutableIntStateOf(0) }
     var isPlayingVoice by remember { mutableStateOf(false) }
@@ -223,7 +224,7 @@ fun CreateCapsuleScreen(
     val takePictureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
-        val uri = pendingCameraUri
+        val uri = pendingCameraUriString?.let(Uri::parse)
         if (success && uri != null) {
             val processed = MediaHelper.processAndCompressImage(context, uri)
             if (processed != null) {
@@ -675,7 +676,7 @@ fun CreateCapsuleScreen(
                             OutlinedButton(
                                 onClick = {
                                     val pair = MediaHelper.createCameraTempFile(context)
-                                    pendingCameraUri = pair.second
+                                    pendingCameraUriString = pair.second.toString()
                                     takePictureLauncher.launch(pair.second)
                                 },
                                 modifier = Modifier.weight(1f),

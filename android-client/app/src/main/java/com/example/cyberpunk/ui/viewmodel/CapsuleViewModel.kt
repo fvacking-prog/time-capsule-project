@@ -6,6 +6,7 @@ import android.content.Intent
 import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.example.cyberpunk.BuildConfig
 import com.example.cyberpunk.R
@@ -204,7 +205,12 @@ data class CapsuleUiState(
         }
 }
 
-class CapsuleViewModel(application: Application) : AndroidViewModel(application) {
+class CapsuleViewModel(
+    application: Application,
+    private val savedStateHandle: SavedStateHandle
+) : AndroidViewModel(application) {
+    constructor(application: Application) : this(application, SavedStateHandle())
+
     private val appContext = application.applicationContext
     private val locationProvider = LocationProvider(appContext)
 
@@ -241,8 +247,17 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
     init {
         ApiConfig.init(appContext)
         CapsuleUnlockScheduler.ensureChannels(appContext)
+        runCatching { MediaHelper.cleanupStaleTempFiles(appContext) }
+        runCatching { AppUpdateManager.cleanupInstalledApksOnStart(appContext, BuildConfig.VERSION_CODE) }
+        restoreCreateDraftFromSavedState()
         _uiState.update { it.copy(settingsUrlInput = ApiConfig.BASE_URL) }
         checkForUpdates(manual = false)
+
+        viewModelScope.launch {
+            _uiState.collect { state ->
+                persistCreateDraftToSavedState(state.createForm)
+            }
+        }
 
         viewModelScope.launch {
             val hasPin = UserPreferences.hasPinFlow(appContext).first()
@@ -298,6 +313,59 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
         }
+    }
+
+    private fun restoreCreateDraftFromSavedState() {
+        val savedTitle = savedStateHandle.get<String>("draft_title") ?: return
+        val savedKind = savedStateHandle.get<String>("draft_kind") ?: "MESSAGE"
+        val savedRecipient = savedStateHandle.get<String>("draft_recipient").orEmpty()
+        val savedTags = savedStateHandle.get<String>("draft_tags").orEmpty()
+        val savedMessage = savedStateHandle.get<String>("draft_message").orEmpty()
+        val savedUnlockMillis = savedStateHandle.get<Long>("draft_unlock_millis")
+            ?: UnlockDateTimeHelper.defaultUnlockMillis(daysAhead = 7)
+        val savedDateChip = savedStateHandle.get<String>("draft_date_chip") ?: "WEEK"
+        val savedIsGeo = savedStateHandle.get<Boolean>("draft_is_geo") ?: false
+        val savedLat = savedStateHandle.get<Double>("draft_lat")
+        val savedLon = savedStateHandle.get<Double>("draft_lon")
+        val savedRadius = savedStateHandle.get<Float>("draft_radius") ?: 50f
+
+        _uiState.update { current ->
+            current.copy(
+                createForm = current.createForm.copy(
+                    title = savedTitle,
+                    kind = savedKind,
+                    recipient = savedRecipient,
+                    tags = savedTags,
+                    messageText = savedMessage,
+                    unlockDateMillis = savedUnlockMillis,
+                    selectedDateChip = savedDateChip,
+                    isGeoLocked = savedIsGeo,
+                    latitude = savedLat,
+                    longitude = savedLon,
+                    radiusMeters = savedRadius,
+                    stages = listOf(
+                        DraftStageItem(
+                            unlockDateMillis = savedUnlockMillis,
+                            secretText = savedMessage
+                        )
+                    )
+                )
+            )
+        }
+    }
+
+    private fun persistCreateDraftToSavedState(form: CreateCapsuleFormState) {
+        savedStateHandle["draft_title"] = form.title
+        savedStateHandle["draft_kind"] = form.kind
+        savedStateHandle["draft_recipient"] = form.recipient
+        savedStateHandle["draft_tags"] = form.tags
+        savedStateHandle["draft_message"] = form.messageText
+        savedStateHandle["draft_unlock_millis"] = form.unlockDateMillis
+        savedStateHandle["draft_date_chip"] = form.selectedDateChip
+        savedStateHandle["draft_is_geo"] = form.isGeoLocked
+        savedStateHandle["draft_lat"] = form.latitude
+        savedStateHandle["draft_lon"] = form.longitude
+        savedStateHandle["draft_radius"] = form.radiusMeters
     }
 
     private fun refreshMeInBackground(token: String) {
@@ -1684,6 +1752,7 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
                     }
 
                     UpdateRequirement.UP_TO_DATE -> {
+                        runCatching { AppUpdateManager.cleanupUpdateCache(appContext) }
                         _uiState.update { state ->
                             state.copy(
                                 isCheckingUpdates = false,

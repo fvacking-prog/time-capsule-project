@@ -172,6 +172,36 @@ object AppUpdateManager {
         }
     }
 
+    /**
+     * Удаляет скачанные APK-файлы при старте, если их версия <= текущей установленной версии.
+     */
+    fun cleanupInstalledApksOnStart(
+        context: Context,
+        currentVersionCode: Int = BuildConfig.VERSION_CODE
+    ): Int {
+        val dir = File(context.cacheDir, CACHE_SUBDIR)
+        return cleanupInstalledApksInDir(dir, currentVersionCode)
+    }
+
+    internal fun cleanupInstalledApksInDir(dir: File, currentVersionCode: Int): Int {
+        if (!dir.exists() || !dir.isDirectory) return 0
+        val versionRegex = Regex("""^timecapsule-update-v(\d+)\.apk$""")
+        var removed = 0
+        dir.listFiles()?.forEach { file ->
+            val name = file.name
+            val match = versionRegex.matchEntire(name)
+            val apkVersionCode = match?.groupValues?.getOrNull(1)?.toIntOrNull()
+            val shouldDelete = name == "download-tmp.apk" ||
+                (apkVersionCode != null && apkVersionCode <= currentVersionCode)
+            if (shouldDelete) {
+                if (runCatching { file.delete() }.getOrDefault(false)) {
+                    removed += 1
+                }
+            }
+        }
+        return removed
+    }
+
     suspend fun downloadAndVerifyApk(
         context: Context,
         versionInfo: AppVersionDto,

@@ -18,6 +18,41 @@ object MediaHelper {
 
     private const val MAX_IMAGE_DIMENSION = 1280
     private const val JPEG_QUALITY = 75
+    const val MAX_TEMP_FILE_AGE_MS = 24L * 60L * 60L * 1000L // 24 hours
+
+    /**
+     * Удаляет временные файлы старше 24 часов из папки кэша медиа и корневого cacheDir.
+     */
+    fun cleanupStaleTempFiles(
+        context: Context,
+        maxAgeMillis: Long = MAX_TEMP_FILE_AGE_MS,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Int {
+        var deletedCount = 0
+        runCatching {
+            val mediaDir = File(context.cacheDir, "capsule-media")
+            deletedCount += cleanupStaleFilesInDir(mediaDir, maxAgeMillis, nowMillis)
+        }
+        return deletedCount
+    }
+
+    internal fun cleanupStaleFilesInDir(
+        dir: File,
+        maxAgeMillis: Long = MAX_TEMP_FILE_AGE_MS,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Int {
+        if (!dir.exists() || !dir.isDirectory) return 0
+        var removed = 0
+        val cutoff = nowMillis - maxAgeMillis
+        dir.listFiles()?.forEach { file ->
+            if (file.isFile && file.lastModified() in 1 until cutoff) {
+                if (runCatching { file.delete() }.getOrDefault(false)) {
+                    removed += 1
+                }
+            }
+        }
+        return removed
+    }
 
     /**
      * Создает временный файл в cacheDir/capsule-media и возвращает пару (File, Content Uri через FileProvider)
