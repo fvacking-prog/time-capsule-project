@@ -20,16 +20,16 @@ object Users : Table("users") {
 // не требует хранения/ротации секретов подписи JWT и позволяет мгновенно отзывать сессионные токены.
 object Sessions : Table("sessions") {
     val token = varchar("token", 64)
-    val userId = varchar("user_id", 36).references(Users.id, onDelete = ReferenceOption.CASCADE)
+    val userId = varchar("user_id", 36).references(Users.id, onDelete = ReferenceOption.CASCADE).index("idx_sessions_user_id")
     val createdAt = long("created_at")
-    val expiresAt = long("expires_at")
+    val expiresAt = long("expires_at").index("idx_sessions_expires_at")
 
     override val primaryKey = PrimaryKey(token)
 }
 
 object Capsules : Table("capsules") {
     val id = varchar("id", 36)
-    val creatorId = varchar("creator_id", 36).references(Users.id, onDelete = ReferenceOption.CASCADE)
+    val creatorId = varchar("creator_id", 36).references(Users.id, onDelete = ReferenceOption.CASCADE).index("idx_capsules_creator_id")
     val title = varchar("title", 255)
     val latitude = double("latitude")
     val longitude = double("longitude")
@@ -47,7 +47,7 @@ object Capsules : Table("capsules") {
 
 object CapsuleStages : Table("capsule_stages") {
     val id = varchar("id", 36)
-    val capsuleId = varchar("capsule_id", 36).references(Capsules.id, onDelete = ReferenceOption.CASCADE)
+    val capsuleId = varchar("capsule_id", 36).references(Capsules.id, onDelete = ReferenceOption.CASCADE).index("idx_capsule_stages_capsule_id")
     val stageNumber = integer("stage_number")
     val unlockDate = long("unlock_date")
     val encryptedText = text("encrypted_text")
@@ -57,7 +57,7 @@ object CapsuleStages : Table("capsule_stages") {
 
 object CapsuleParticipants : Table("capsule_participants") {
     val capsuleId = varchar("capsule_id", 36).references(Capsules.id, onDelete = ReferenceOption.CASCADE)
-    val userId = varchar("user_id", 36).references(Users.id, onDelete = ReferenceOption.CASCADE)
+    val userId = varchar("user_id", 36).references(Users.id, onDelete = ReferenceOption.CASCADE).index("idx_capsule_participants_user_id")
     val lastLat = double("last_lat").nullable()
     val lastLon = double("last_lon").nullable()
     val lastSeenAt = long("last_seen_at").nullable()
@@ -70,7 +70,7 @@ object CapsuleParticipants : Table("capsule_participants") {
 
 object Blocks : Table("blocks") {
     val blockerId = varchar("blocker_id", 36).references(Users.id, onDelete = ReferenceOption.CASCADE)
-    val blockedUserId = varchar("blocked_user_id", 36).references(Users.id, onDelete = ReferenceOption.CASCADE)
+    val blockedUserId = varchar("blocked_user_id", 36).references(Users.id, onDelete = ReferenceOption.CASCADE).index("idx_blocks_blocked_user_id")
     val createdAt = long("created_at")
 
     override val primaryKey = PrimaryKey(blockerId, blockedUserId)
@@ -78,7 +78,7 @@ object Blocks : Table("blocks") {
 
 object CapsuleMedia : Table("capsule_media") {
     val id = varchar("id", 36)
-    val capsuleId = varchar("capsule_id", 36).references(Capsules.id, onDelete = ReferenceOption.CASCADE)
+    val capsuleId = varchar("capsule_id", 36).references(Capsules.id, onDelete = ReferenceOption.CASCADE).index("idx_capsule_media_capsule_id")
     val kind = varchar("kind", 16) // "PHOTO" or "VOICE"
     val mime = varchar("mime", 64) // "image/jpeg" or "audio/mp4"
     val sizeBytes = long("size_bytes")

@@ -127,4 +127,7 @@
 6. **R1.6 (Аудит 11): Защита от chunked-обхода `Content-Length` через `readNBytes(max + 1)`**:
    - Чтение JSON-тел запросов переведено на `receiveJsonWithLimit` и `readBytesWithLimit(stream, maxBytes)`, использующие `InputStream.readNBytes(maxBytes + 1)`.
    - При превышении лимита (2.5 МБ для `POST /api/v1/capsules`, 64 КБ для остальных JSON-запросов) чтение немедленно прерывается и возвращается `413 Payload Too Large` даже при отсутствии заголовка `Content-Length` (`Transfer-Encoding: chunked`).
+7. **R1.7 (Аудит 9 и 10): 7 индексов БД и SQL-поиск пользователей по `@handle` (`like` + `limit(30)` + исключение блокировок)**:
+   - В `Tables.kt` объявлены индексы на `Capsules.creatorId`, `CapsuleStages.capsuleId`, `CapsuleParticipants.userId`, `CapsuleMedia.capsuleId`, `Sessions.userId`, `Sessions.expiresAt`, `Blocks.blockedUserId`. В `migrateDatabase()` при старте дополнительно выполняются явные `CREATE INDEX IF NOT EXISTS ...` для гарантированного создания в PostgreSQL и H2.
+   - `searchUsersByQuery` переписан без выгрузки всей таблицы `Users` в память: фильтрация выполняется на стороне СУБД через `lowerCase() like ...`, `notInSubQuery` (исключение заблокированных в обе стороны), `orderBy(Users.handle)` и `.limit(30)`.
 

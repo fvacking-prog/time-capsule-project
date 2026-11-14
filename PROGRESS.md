@@ -9,8 +9,8 @@
 | **R1.3 (Аудит 5)** | `DELETE /api/v1/me/data` удаляет строку `Users` и медиа | DONE | `6a6cc7a` |
 | **R1.4 (Аудит 6)** | `inviteCode` только для групповых капсул; `join` только в групповые (`403` для личных); поиск по `trim().uppercase()` без `selectAll`; двусторонняя проверка блокировок | DONE | `6cbe1ff` |
 | **R1.5 (Аудит 7)** | `AuthRateLimiter`: ключ = последнее значение `X-Forwarded-For` (или `remoteHost`), очистка > 5000 ключей, лимит на `/capsules/join`, `/me/handle` и загрузку медиа | DONE | `a2e1195` |
-| **R1.6 (Аудит 11)** | Чтение загрузок ограничено по байтам (`readNBytes(max + 1)`), защита от chunked-обхода `Content-Length` | DONE | `pending` |
-| **R1.7 (Аудит 9, 10)** | Индексы БД (7 индексов + проверка/создание в PostgreSQL); поиск `@handle` через SQL `like` + `limit(30)` и исключение заблокированных | TODO | — |
+| **R1.6 (Аудит 11)** | Чтение загрузок ограничено по байтам (`readNBytes(max + 1)`), защита от chunked-обхода `Content-Length` | DONE | `7d4d539` |
+| **R1.7 (Аудит 9, 10)** | Индексы БД (7 индексов + проверка/создание в PostgreSQL); поиск `@handle` через SQL `like` + `limit(30)` и исключение заблокированных | DONE | `pending` |
 | **R1.8 (Аудит 15)** | Ротация ключа без смены формата шифротекста (`CAPSULE_AES_KEY_PREVIOUS` при `AEADBadTagException`), защита от падения списка на повреждённых данных | TODO | — |
 | **R1.9 (Аудит 16, 20, 28, 31, 34, 35 + /ping)** | Кешируемый `GoogleIdTokenVerifier`; Hikari `minimumIdle=0`, `idleTimeout=60000`, очистка просроченных сессий (при старте и раз в 6 ч); `409` при дубле `@handle`; стектрейсы в `StatusPages` и `CallLogging`; обновление `google-api-client` и `postgresql`; публичный `GET /ping`; унификация корневого `Dockerfile` | TODO | — |
 | **R1.10 (Аудит 4, 14, 17, 19, 29)** | Клиент: убрать двойную навигацию с полки; `retryTrigger` в `PhotoMediaCard`/`VoiceMediaCard` и перемотка `Slider`; убрать повторный `authGoogle` в `catch`; бейдж кода только у групповых; разблокировать шаблоны в `IdeasScreen`, удалить `ROUTE_MY_CAPSULES` и мёртвые методы | TODO | — |

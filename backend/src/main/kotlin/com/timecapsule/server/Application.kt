@@ -262,6 +262,19 @@ fun migrateDatabase() {
     transaction {
         SchemaUtils.createMissingTablesAndColumns(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks, CapsuleMedia)
 
+        val explicitIndexes = listOf(
+            "CREATE INDEX IF NOT EXISTS idx_capsules_creator_id ON capsules (creator_id)",
+            "CREATE INDEX IF NOT EXISTS idx_capsule_stages_capsule_id ON capsule_stages (capsule_id)",
+            "CREATE INDEX IF NOT EXISTS idx_capsule_participants_user_id ON capsule_participants (user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_capsule_media_capsule_id ON capsule_media (capsule_id)",
+            "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions (user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions (expires_at)",
+            "CREATE INDEX IF NOT EXISTS idx_blocks_blocked_user_id ON blocks (blocked_user_id)"
+        )
+        for (sql in explicitIndexes) {
+            exec(sql)
+        }
+
         // Migrating existing group capsules created before invite_code was introduced
         val capsulesWithoutCode = Capsules
             .selectAll()

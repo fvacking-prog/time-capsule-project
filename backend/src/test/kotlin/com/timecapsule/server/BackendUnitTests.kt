@@ -443,6 +443,26 @@ class BackendUnitTests {
             val code = migratedRow[Capsules.inviteCode]
             assertNotNull(code)
             assertEquals(6, code.length)
+
+            // Verify all 7 explicit indexes exist in database metadata
+            val expectedIndexes = setOf(
+                "idx_capsules_creator_id",
+                "idx_capsule_stages_capsule_id",
+                "idx_capsule_participants_user_id",
+                "idx_capsule_media_capsule_id",
+                "idx_sessions_user_id",
+                "idx_sessions_expires_at",
+                "idx_blocks_blocked_user_id"
+            )
+            val foundIndexes = mutableSetOf<String>()
+            exec("SELECT INDEX_NAME FROM INFORMATION_SCHEMA.INDEXES") { rs ->
+                while (rs.next()) {
+                    foundIndexes.add(rs.getString(1).lowercase())
+                }
+            }
+            for (expected in expectedIndexes) {
+                assertTrue(foundIndexes.contains(expected), "Missing database index '$expected' in $foundIndexes")
+            }
         }
     }
 
@@ -1202,7 +1222,7 @@ class BackendUnitTests {
                 it[handle] = null
                 it[email] = "nohandle@example.com"
             }
-            for (i in 1..25) {
+            for (i in 1..35) {
                 Users.insert {
                     it[id] = "user_$i"
                     it[username] = "Friend $i"
@@ -1211,6 +1231,17 @@ class BackendUnitTests {
                     it[googleSub] = "sub_$i"
                     it[photoUrl] = "https://img.example.com/$i.png"
                 }
+            }
+            // Block user_1 (blocked by self_user) and user_2 (blocks self_user)
+            Blocks.insert {
+                it[blockerId] = "self_user"
+                it[blockedUserId] = "user_1"
+                it[createdAt] = 1000L
+            }
+            Blocks.insert {
+                it[blockerId] = "user_2"
+                it[blockedUserId] = "self_user"
+                it[createdAt] = 1000L
             }
             selfToken = createSessionToken("self_user")
         }
@@ -1222,7 +1253,7 @@ class BackendUnitTests {
 
         val json = Json { ignoreUnknownKeys = true }
 
-        // Поиск по префиксу @alpha -> максимум 20, без self, без пользователей без handle, email == null
+        // Поиск по префиксу @alpha -> максимум 30 (limit(30)), без self, без заблокированных, без пользователей без handle, email == null
         val respHandlePrefix = client.get("/api/v1/users?query=@alpha") {
             header(HttpHeaders.Authorization, "Bearer $selfToken")
         }
@@ -1232,9 +1263,11 @@ class BackendUnitTests {
         assertFalse(rawBody.contains("sub_"), "Foreign googleSub must never appear in response")
 
         val listByPrefix = json.decodeFromString<List<UserDto>>(rawBody)
-        assertEquals(20, listByPrefix.size)
+        assertEquals(30, listByPrefix.size)
         assertTrue(listByPrefix.none { it.id == "self_user" })
         assertTrue(listByPrefix.none { it.id == "no_handle_user" })
+        assertTrue(listByPrefix.none { it.id == "user_1" }, "Blocked user_1 must be excluded")
+        assertTrue(listByPrefix.none { it.id == "user_2" }, "Blocker user_2 must be excluded")
         assertTrue(listByPrefix.all { it.handle?.startsWith("alpha_") == true })
         assertTrue(listByPrefix.all { it.email == null })
         assertTrue(listByPrefix.all { it.avatarUrl != null })

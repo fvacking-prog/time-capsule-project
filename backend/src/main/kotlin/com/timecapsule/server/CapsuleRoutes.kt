@@ -41,13 +41,16 @@ import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.greaterEq
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.inList
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.inSubQuery
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.isNotNull
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.isNull
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.like
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.neq
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.notInList
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.notInSubQuery
 import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
+import org.jetbrains.exposed.sql.lowerCase
 import org.jetbrains.exposed.sql.or
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -1066,28 +1069,46 @@ internal fun searchUsersByQuery(currentUserId: String, rawQuery: String): List<U
     val trimmed = rawQuery.trim()
     val isHandleSearch = trimmed.startsWith("@")
     val cleanQuery = trimmed.removePrefix("@").trim()
-    val cleanLower = cleanQuery.lowercase()
+    val safeLower = cleanQuery.lowercase().replace("%", "")
+    if (cleanQuery.isNotEmpty() && safeLower.isEmpty()) {
+        return emptyList()
+    }
 
     return transaction {
-        Users.selectAll()
-            .where { (Users.id neq currentUserId) and Users.handle.isNotNull() }
-            .toList()
-            .filter { row ->
-                val userHandle = row[Users.handle]?.trim()?.takeIf { it.isNotEmpty() } ?: return@filter false
-                if (cleanQuery.isEmpty()) {
-                    true
-                } else if (isHandleSearch) {
-                    userHandle.startsWith(cleanLower)
-                } else {
-                    val displayName = row[Users.displayName]?.trim().orEmpty()
-                    val username = row[Users.username].trim()
-                    userHandle.startsWith(cleanLower) ||
-                        displayName.contains(cleanQuery, ignoreCase = true) ||
-                        username.contains(cleanQuery, ignoreCase = true)
-                }
+        val blockedByMeSubQuery = Blocks
+            .select(Blocks.blockedUserId)
+            .where { Blocks.blockerId eq currentUserId }
+
+        val blockedMeSubQuery = Blocks
+            .select(Blocks.blockerId)
+            .where { Blocks.blockedUserId eq currentUserId }
+
+        val baseCondition = (Users.id neq currentUserId) and
+            Users.handle.isNotNull() and
+            (Users.handle neq "") and
+            (Users.id notInSubQuery blockedByMeSubQuery) and
+            (Users.id notInSubQuery blockedMeSubQuery)
+
+        val filterCondition = if (safeLower.isEmpty()) {
+            baseCondition
+        } else {
+            val prefixPattern = "$safeLower%"
+            val containsPattern = "%$safeLower%"
+            if (isHandleSearch) {
+                baseCondition and (Users.handle.lowerCase() like prefixPattern)
+            } else {
+                baseCondition and (
+                    (Users.handle.lowerCase() like prefixPattern) or
+                        (Users.displayName.lowerCase() like containsPattern) or
+                        (Users.username.lowerCase() like containsPattern)
+                )
             }
-            .sortedBy { it[Users.handle] }
-            .take(20)
+        }
+
+        Users.selectAll()
+            .where { filterCondition }
+            .orderBy(Users.handle to SortOrder.ASC)
+            .limit(30)
             .map { row -> row.toUserDto(includeEmail = false) }
     }
 }
