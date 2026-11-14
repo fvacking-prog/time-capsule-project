@@ -105,3 +105,9 @@
    - Градиентный фон `#7AA2F7` → `#BB9AF7` с контрастным текстом и иконкой замка (`#0F111A`, контраст > 8:1).
    - Индикация загрузки (`CircularProgressIndicator` в тон контенту кнопки) при отправке формы.
    - Сохранена логика вызова подтверждения запечатывания.
+
+## 2026-11-14: Ночная доработка (Фазы R1–R3)
+1. **R1.1 (Аудит 1 и 8): Проекция метаданных медиа без `encrypted_bytes` и батч-загрузка списка капсул**:
+   - В `buildCapsuleDtosBatch` и `buildCapsuleDto` выборка из `CapsuleMedia` выполняется строго по колонкам `id`, `capsuleId`, `kind`, `mime`, `sizeBytes`, `durationMs` без чтения BLOB-поля `encrypted_bytes` (чтение и расшифровка BLOB оставлены только в `GET /api/v1/capsules/{id}/media/{mediaId}`).
+   - `getVisibleCapsuleIds` переведён на одиночный SQL-запрос с подзапросами `inSubQuery`/`notInSubQuery`, а `buildCapsuleDtosBatch` загружает капсулы (с `LEFT JOIN Users`), участников, этапы и метаданные медиа за 4 батч-запроса `inList`. Суммарно `GET /api/v1/capsules` выполняет 5 SQL-запросов в транзакции (6 включая проверку сессии), независимо от числа капсул.
+

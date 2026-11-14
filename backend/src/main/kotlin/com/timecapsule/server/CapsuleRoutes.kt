@@ -33,14 +33,17 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import io.ktor.server.routing.route
+import org.jetbrains.exposed.sql.JoinType
 import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.greaterEq
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.inList
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.inSubQuery
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.isNull
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.neq
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.notInList
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.notInSubQuery
 import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
@@ -105,27 +108,19 @@ fun canUserAccessCapsule(capsuleId: String, userId: String): Boolean {
 }
 
 fun getVisibleCapsuleIds(userId: String): List<String> {
-    val participantCapsuleIds = CapsuleParticipants
-        .selectAll()
+    val participantCapsulesSubQuery = CapsuleParticipants
+        .select(CapsuleParticipants.capsuleId)
         .where { CapsuleParticipants.userId eq userId }
-        .map { it[CapsuleParticipants.capsuleId] }
 
-    val creatorCapsuleIds = Capsules
-        .selectAll()
-        .where { Capsules.creatorId eq userId }
-        .map { it[Capsules.id] }
-
-    val candidateIds = (participantCapsuleIds + creatorCapsuleIds).distinct()
-    if (candidateIds.isEmpty()) return emptyList()
-
-    val blockedCreators = getBlockedUserIdsFor(userId)
-    if (blockedCreators.isEmpty()) return candidateIds
+    val blockedCreatorsSubQuery = Blocks
+        .select(Blocks.blockedUserId)
+        .where { Blocks.blockerId eq userId }
 
     return Capsules
-        .selectAll()
+        .select(Capsules.id)
         .where {
-            (Capsules.id inList candidateIds) and
-                ((Capsules.creatorId eq userId) or (Capsules.creatorId notInList blockedCreators))
+            ((Capsules.creatorId eq userId) or (Capsules.id inSubQuery participantCapsulesSubQuery)) and
+                ((Capsules.creatorId eq userId) or (Capsules.creatorId notInSubQuery blockedCreatorsSubQuery))
         }
         .map { it[Capsules.id] }
 }
@@ -395,7 +390,7 @@ fun Route.capsuleRoutes() {
             val capsules = transaction {
                 val now = System.currentTimeMillis()
                 val visibleIds = getVisibleCapsuleIds(currentUserId)
-                visibleIds.map { id -> buildCapsuleDto(id, now, requestingUserId = currentUserId) }
+                buildCapsuleDtosBatch(visibleIds, now, requestingUserId = currentUserId)
             }
             call.respond(capsules)
         }
@@ -1143,18 +1138,74 @@ fun buildCapsuleDto(
     now: Long = System.currentTimeMillis(),
     requestingUserId: String? = null
 ): CapsuleDto {
-    val capsuleRow = Capsules
-        .selectAll()
-        .where { Capsules.id eq capsuleId }
-        .singleOrNull()
+    return buildCapsuleDtosBatch(listOf(capsuleId), now, requestingUserId).firstOrNull()
         ?: throw CapsuleNotFoundException("Capsule '$capsuleId' not found")
+}
 
-    val creatorId = capsuleRow[Capsules.creatorId]
-    val creatorRow = Users
+fun buildCapsuleDtosBatch(
+    capsuleIds: List<String>,
+    now: Long = System.currentTimeMillis(),
+    requestingUserId: String? = null
+): List<CapsuleDto> {
+    val distinctIds = capsuleIds.distinct()
+    if (distinctIds.isEmpty()) return emptyList()
+
+    val capsuleRowsById = Capsules
+        .join(Users, JoinType.LEFT, onColumn = Capsules.creatorId, otherColumn = Users.id)
         .selectAll()
-        .where { Users.id eq creatorId }
-        .singleOrNull()
-    val creatorHandle = creatorRow?.get(Users.handle)
+        .where { Capsules.id inList distinctIds }
+        .associateBy { it[Capsules.id] }
+
+    if (capsuleRowsById.isEmpty()) return emptyList()
+
+    val foundIds = capsuleRowsById.keys.toList()
+
+    val participantRowsByCapsule = (CapsuleParticipants innerJoin Users)
+        .selectAll()
+        .where { CapsuleParticipants.capsuleId inList foundIds }
+        .groupBy { it[CapsuleParticipants.capsuleId] }
+
+    val stageRowsByCapsule = CapsuleStages
+        .selectAll()
+        .where { CapsuleStages.capsuleId inList foundIds }
+        .orderBy(CapsuleStages.stageNumber to SortOrder.ASC)
+        .groupBy { it[CapsuleStages.capsuleId] }
+
+    val mediaRowsByCapsule = CapsuleMedia
+        .select(
+            CapsuleMedia.id,
+            CapsuleMedia.capsuleId,
+            CapsuleMedia.kind,
+            CapsuleMedia.mime,
+            CapsuleMedia.sizeBytes,
+            CapsuleMedia.durationMs
+        )
+        .where { CapsuleMedia.capsuleId inList foundIds }
+        .groupBy { it[CapsuleMedia.capsuleId] }
+
+    return distinctIds.mapNotNull { capsuleId ->
+        val capsuleRow = capsuleRowsById[capsuleId] ?: return@mapNotNull null
+        assembleCapsuleDto(
+            capsuleRow = capsuleRow,
+            participantRows = participantRowsByCapsule[capsuleId].orEmpty(),
+            stageRows = stageRowsByCapsule[capsuleId].orEmpty(),
+            mediaRows = mediaRowsByCapsule[capsuleId].orEmpty(),
+            now = now,
+            requestingUserId = requestingUserId
+        )
+    }
+}
+
+private fun assembleCapsuleDto(
+    capsuleRow: ResultRow,
+    participantRows: List<ResultRow>,
+    stageRows: List<ResultRow>,
+    mediaRows: List<ResultRow>,
+    now: Long,
+    requestingUserId: String?
+): CapsuleDto {
+    val creatorId = capsuleRow[Capsules.creatorId]
+    val creatorHandle = capsuleRow.getOrNull(Users.handle)
 
     val capsuleLat = capsuleRow[Capsules.latitude]
     val capsuleLon = capsuleRow[Capsules.longitude]
@@ -1165,47 +1216,44 @@ fun buildCapsuleDto(
     val rawTags = capsuleRow[Capsules.tags]
     val tags = if (rawTags.isBlank()) emptyList() else rawTags.split(",").map { it.trim() }.filter { it.isNotEmpty() }
 
-    val participants = (CapsuleParticipants innerJoin Users)
-        .selectAll()
-        .where { CapsuleParticipants.capsuleId eq capsuleId }
-        .map { row ->
-            val lastLat = row[CapsuleParticipants.lastLat]
-            val lastLon = row[CapsuleParticipants.lastLon]
-            val lastSeenAt = row[CapsuleParticipants.lastSeenAt]
+    val participants = participantRows.map { row ->
+        val lastLat = row[CapsuleParticipants.lastLat]
+        val lastLon = row[CapsuleParticipants.lastLon]
+        val lastSeenAt = row[CapsuleParticipants.lastSeenAt]
 
-            val distanceMeters = if (lastLat != null && lastLon != null) {
-                GeoUtils.haversineMeters(lastLat, lastLon, capsuleLat, capsuleLon)
-            } else {
-                null
-            }
+        val distanceMeters = if (lastLat != null && lastLon != null) {
+            GeoUtils.haversineMeters(lastLat, lastLon, capsuleLat, capsuleLon)
+        } else {
+            null
+        }
 
-            val isNearbyAndRecent = if (!isGeoLocked) {
-                true
-            } else {
-                GeoUtils.isNearbyAndRecent(
-                    lastLat = lastLat,
-                    lastLon = lastLon,
-                    lastSeenAt = lastSeenAt,
-                    capsuleLat = capsuleLat,
-                    capsuleLon = capsuleLon,
-                    radiusMeters = radiusMeters,
-                    now = now
-                )
-            }
-
-            ParticipantStatusDto(
-                userId = row[CapsuleParticipants.userId],
-                username = row[Users.displayName]?.takeIf { it.isNotBlank() } ?: row[Users.username],
-                distanceMeters = distanceMeters,
+        val isNearbyAndRecent = if (!isGeoLocked) {
+            true
+        } else {
+            GeoUtils.isNearbyAndRecent(
+                lastLat = lastLat,
+                lastLon = lastLon,
                 lastSeenAt = lastSeenAt,
-                isNearbyAndRecent = isNearbyAndRecent,
-                openedAt = row[CapsuleParticipants.openedAt],
-                archived = row[CapsuleParticipants.archived],
-                handle = row[Users.handle],
-                avatarUrl = row[Users.photoUrl],
-                role = row[CapsuleParticipants.role]
+                capsuleLat = capsuleLat,
+                capsuleLon = capsuleLon,
+                radiusMeters = radiusMeters,
+                now = now
             )
         }
+
+        ParticipantStatusDto(
+            userId = row[CapsuleParticipants.userId],
+            username = row[Users.displayName]?.takeIf { it.isNotBlank() } ?: row[Users.username],
+            distanceMeters = distanceMeters,
+            lastSeenAt = lastSeenAt,
+            isNearbyAndRecent = isNearbyAndRecent,
+            openedAt = row[CapsuleParticipants.openedAt],
+            archived = row[CapsuleParticipants.archived],
+            handle = row[Users.handle],
+            avatarUrl = row[Users.photoUrl],
+            role = row[CapsuleParticipants.role]
+        )
+    }
 
     val allParticipantsNearbyAndRecent = if (!isGeoLocked) {
         true
@@ -1213,29 +1261,25 @@ fun buildCapsuleDto(
         participants.isNotEmpty() && participants.all { it.isNearbyAndRecent }
     }
 
-    val stages = CapsuleStages
-        .selectAll()
-        .where { CapsuleStages.capsuleId eq capsuleId }
-        .orderBy(CapsuleStages.stageNumber to SortOrder.ASC)
-        .map { row ->
-            val unlockDate = row[CapsuleStages.unlockDate]
-            val encryptedText = row[CapsuleStages.encryptedText]
-            val isUnlocked = now >= unlockDate && allParticipantsNearbyAndRecent
-            val text = GeoUtils.stageText(
-                encryptedText = encryptedText,
-                unlockDate = unlockDate,
-                now = now,
-                allParticipantsNearbyAndRecent = allParticipantsNearbyAndRecent
-            )
+    val stages = stageRows.map { row ->
+        val unlockDate = row[CapsuleStages.unlockDate]
+        val encryptedText = row[CapsuleStages.encryptedText]
+        val isUnlocked = now >= unlockDate && allParticipantsNearbyAndRecent
+        val text = GeoUtils.stageText(
+            encryptedText = encryptedText,
+            unlockDate = unlockDate,
+            now = now,
+            allParticipantsNearbyAndRecent = allParticipantsNearbyAndRecent
+        )
 
-            CapsuleStageDto(
-                id = row[CapsuleStages.id],
-                stageNumber = row[CapsuleStages.stageNumber],
-                unlockDate = unlockDate,
-                text = text,
-                isUnlocked = isUnlocked
-            )
-        }
+        CapsuleStageDto(
+            id = row[CapsuleStages.id],
+            stageNumber = row[CapsuleStages.stageNumber],
+            unlockDate = unlockDate,
+            text = text,
+            isUnlocked = isUnlocked
+        )
+    }
 
     val isFullyUnlocked = stages.isNotEmpty() && stages.any { it.isUnlocked } && allParticipantsNearbyAndRecent
 
@@ -1267,18 +1311,15 @@ fun buildCapsuleDto(
         else -> "SEALED"
     }
 
-    val media = CapsuleMedia
-        .selectAll()
-        .where { CapsuleMedia.capsuleId eq capsuleId }
-        .map { row ->
-            CapsuleMediaDto(
-                id = row[CapsuleMedia.id],
-                kind = row[CapsuleMedia.kind],
-                mime = row[CapsuleMedia.mime],
-                sizeBytes = row[CapsuleMedia.sizeBytes],
-                durationMs = row[CapsuleMedia.durationMs]
-            )
-        }
+    val media = mediaRows.map { row ->
+        CapsuleMediaDto(
+            id = row[CapsuleMedia.id],
+            kind = row[CapsuleMedia.kind],
+            mime = row[CapsuleMedia.mime],
+            sizeBytes = row[CapsuleMedia.sizeBytes],
+            durationMs = row[CapsuleMedia.durationMs]
+        )
+    }
 
     return CapsuleDto(
         id = capsuleRow[Capsules.id],

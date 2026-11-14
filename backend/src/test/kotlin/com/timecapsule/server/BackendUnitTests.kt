@@ -1932,6 +1932,86 @@ class BackendUnitTests {
             assertEquals(0L, Capsules.selectAll().where { Capsules.id eq capsuleId }.count())
         }
     }
+
+    @Test
+    fun `batch capsule list executes at most 6 SQL queries and does not read encrypted_bytes`() {
+        val testDb = Database.connect(
+            url = "jdbc:h2:mem:test_batch_queries_${UUID.randomUUID()};DB_CLOSE_DELAY=-1",
+            driver = "org.h2.Driver"
+        )
+        val now = System.currentTimeMillis()
+        transaction(testDb) {
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks, CapsuleMedia)
+            Users.insert {
+                it[id] = "user_batch"
+                it[username] = "BatchUser"
+                it[handle] = "batch_user"
+            }
+            for (i in 1..15) {
+                val cid = "cap_batch_$i"
+                Capsules.insert {
+                    it[id] = cid
+                    it[creatorId] = "user_batch"
+                    it[title] = "Capsule #$i"
+                    it[latitude] = 40.0
+                    it[longitude] = 69.0
+                    it[radiusMeters] = 50.0
+                    it[createdAt] = now - i * 1000L
+                    it[isGroupCapsule] = false
+                    it[inviteCode] = null
+                    it[kind] = "PHOTO"
+                    it[isGeoLocked] = false
+                }
+                CapsuleParticipants.insert {
+                    it[capsuleId] = cid
+                    it[userId] = "user_batch"
+                    it[role] = "CREATOR"
+                }
+                CapsuleStages.insert {
+                    it[id] = "stage_batch_$i"
+                    it[capsuleId] = cid
+                    it[stageNumber] = 1
+                    it[unlockDate] = now - 5000L
+                    it[encryptedText] = CryptoUtils.encrypt("Secret #$i")
+                }
+                CapsuleMedia.insert {
+                    it[id] = "media_batch_$i"
+                    it[capsuleId] = cid
+                    it[kind] = "PHOTO"
+                    it[mime] = "image/jpeg"
+                    it[sizeBytes] = 128L
+                    it[durationMs] = null
+                    it[encryptedBytes] = CryptoUtils.encryptBytes(byteArrayOf(1, 2, 3, 4))
+                    it[createdAt] = now
+                }
+            }
+        }
+
+        val executedQueries = mutableListOf<String>()
+        transaction(testDb) {
+            registerInterceptor(object : org.jetbrains.exposed.sql.statements.StatementInterceptor {
+                override fun beforeExecution(
+                    transaction: org.jetbrains.exposed.sql.Transaction,
+                    context: org.jetbrains.exposed.sql.statements.StatementContext
+                ) {
+                    executedQueries.add(context.sql(transaction))
+                }
+            })
+            val visibleIds = getVisibleCapsuleIds("user_batch")
+            val dtos = buildCapsuleDtosBatch(visibleIds, now, requestingUserId = "user_batch")
+            assertEquals(15, dtos.size)
+            assertTrue(dtos.all { it.media.size == 1 && it.media.first().sizeBytes == 128L })
+        }
+
+        assertTrue(
+            executedQueries.size in 1..6,
+            "Expected <= 6 SQL queries for listing 15 capsules, but executed ${executedQueries.size}: $executedQueries"
+        )
+        assertTrue(
+            executedQueries.none { it.contains("encrypted_bytes", ignoreCase = true) },
+            "Capsule list query must NOT select encrypted_bytes column: $executedQueries"
+        )
+    }
 }
 
 
