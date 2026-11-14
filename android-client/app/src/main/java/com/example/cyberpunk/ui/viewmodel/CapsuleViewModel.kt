@@ -814,7 +814,7 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
 
                 loaded.forEach { fresh ->
                     val old = previousCapsules.find { it.id == fresh.id }
-                    if (old != null && !old.isFullyUnlocked && fresh.isFullyUnlocked) {
+                    if (old != null && !old.hasUnlockedStage && fresh.hasUnlockedStage) {
                         _snackbarEvents.tryEmit(appContext.getString(R.string.capsule_just_unlocked_snackbar, fresh.title))
                     }
                 }
@@ -868,7 +868,7 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { state ->
             val old = state.capsules.find { it.id == updated.id }
             val list = state.capsules.map { if (it.id == updated.id) updated else it }
-            if (old != null && !old.isFullyUnlocked && updated.isFullyUnlocked) {
+            if (old != null && !old.hasUnlockedStage && updated.hasUnlockedStage) {
                 _snackbarEvents.tryEmit(appContext.getString(R.string.capsule_just_unlocked_snackbar, updated.title))
             }
             state.copy(capsules = list)
@@ -877,7 +877,10 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
 
     fun onCapsuleClicked(onOpenTimeline: () -> Unit) {
         val capsule = _uiState.value.selectedCapsule ?: return
-        if (capsule.isFullyUnlocked) {
+        if (capsule.hasUnlockedStage) {
+            if (capsule.openedAt == null) {
+                openCapsule(capsule.id)
+            }
             onOpenTimeline()
         } else {
             val waiting = if (capsule.isGroupCapsule) {

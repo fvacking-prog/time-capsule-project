@@ -146,11 +146,11 @@ fun RadarScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val haptic = LocalHapticFeedback.current
-    var previousUnlockedState by remember(capsule?.id) { mutableStateOf(capsule?.isFullyUnlocked) }
+    var previousUnlockedState by remember(capsule?.id) { mutableStateOf(capsule?.hasUnlockedStage) }
     val neonFlashAnim = remember { Animatable(0f) }
 
-    LaunchedEffect(capsule?.id, capsule?.isFullyUnlocked) {
-        val currentUnlocked = capsule?.isFullyUnlocked
+    LaunchedEffect(capsule?.id, capsule?.hasUnlockedStage) {
+        val currentUnlocked = capsule?.hasUnlockedStage
         if (previousUnlockedState == false && currentUnlocked == true) {
             // Haptic vibration feedback on unlock transition
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -339,7 +339,7 @@ fun RadarScreen(
         val flashAlpha = neonFlashAnim.value
         val cardBorderColor = when {
             flashAlpha > 0.01f -> TokyoAccent.copy(alpha = (0.5f + flashAlpha * 0.5f).coerceIn(0f, 1f))
-            capsule.isFullyUnlocked -> TokyoSuccess.copy(alpha = 0.6f)
+            capsule.hasUnlockedStage -> TokyoSuccess.copy(alpha = 0.6f)
             else -> TokyoError.copy(alpha = 0.45f)
         }
         val cardBorderWidth = if (flashAlpha > 0.01f) (1.dp + 3.dp * flashAlpha) else 1.dp
@@ -373,21 +373,21 @@ fun RadarScreen(
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = if (capsule.isFullyUnlocked) Icons.Default.LockOpen else Icons.Default.Lock,
+                            imageVector = if (capsule.hasUnlockedStage) Icons.Default.LockOpen else Icons.Default.Lock,
                             contentDescription = null,
-                            tint = if (capsule.isFullyUnlocked) TokyoSuccess else TokyoError,
+                            tint = if (capsule.hasUnlockedStage) TokyoSuccess else TokyoError,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = if (capsule.isFullyUnlocked) {
+                            text = if (capsule.hasUnlockedStage) {
                                 stringResource(R.string.capsule_status_unlocked)
                             } else {
                                 stringResource(R.string.capsule_status_locked)
                             },
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
-                            color = if (capsule.isFullyUnlocked) TokyoSuccess else TokyoError
+                            color = if (capsule.hasUnlockedStage) TokyoSuccess else TokyoError
                         )
                     }
                 }
@@ -402,7 +402,7 @@ fun RadarScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Capsule3DView(
-                        isUnlocked = capsule.isFullyUnlocked,
+                        isUnlocked = capsule.hasUnlockedStage,
                         isSyncing = uiState.isSyncing,
                         onCapsuleClick = onCapsule3DClick,
                         modifier = Modifier.fillMaxSize()
@@ -455,13 +455,13 @@ fun RadarScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = if (capsule.isFullyUnlocked) {
+                    text = if (capsule.hasUnlockedStage) {
                         stringResource(R.string.capsule_tap_unlocked_hint)
                     } else {
                         stringResource(R.string.capsule_tap_locked_hint)
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (capsule.isFullyUnlocked) TokyoSuccess else TokyoOnSurface
+                    color = if (capsule.hasUnlockedStage) TokyoSuccess else TokyoOnSurface
                 )
             }
         }
@@ -525,7 +525,7 @@ private fun AnimatedGeoRadarCard(
             null
         }
 
-    val radarAccent = if (capsule.isFullyUnlocked) TokyoSuccess else TokyoAccent
+    val radarAccent = if (capsule.hasUnlockedStage) TokyoSuccess else TokyoAccent
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -720,7 +720,7 @@ private fun AnimatedGeoRadarCard(
                 )
             }
 
-            if (capsule.isFullyUnlocked) {
+            if (capsule.hasUnlockedStage) {
                 Button(
                     onClick = onOpenTimelineClick,
                     modifier = Modifier.fillMaxWidth(),

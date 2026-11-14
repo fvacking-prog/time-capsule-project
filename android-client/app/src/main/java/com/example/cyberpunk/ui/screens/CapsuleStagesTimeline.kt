@@ -145,8 +145,8 @@ fun CapsuleStagesTimeline(
 
         val stages = capsule?.stages?.sortedBy { it.stageNumber }.orEmpty()
 
-        val currentStageNumber = if (capsule?.isFullyUnlocked == true) {
-            // When fully unlocked, highlight the highest unlocked stage (the open message)
+        val currentStageNumber = if (capsule?.hasUnlockedStage == true) {
+            // Highlight the highest unlocked stage (the latest open message)
             stages.lastOrNull { it.isUnlocked }?.stageNumber ?: stages.firstOrNull()?.stageNumber
         } else {
             // When locked, highlight the first stage awaiting unlock
@@ -162,7 +162,7 @@ fun CapsuleStagesTimeline(
             )
         }
 
-        if (capsule != null && capsule.media.isNotEmpty() && capsule.isFullyUnlocked) {
+        if (capsule != null && capsule.media.isNotEmpty() && capsule.hasUnlockedStage) {
             CapsuleMediaSection(
                 capsule = capsule,
                 onDownloadMedia = onDownloadMedia

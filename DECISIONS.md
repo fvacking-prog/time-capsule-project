@@ -110,4 +110,8 @@
 1. **R1.1 (Аудит 1 и 8): Проекция метаданных медиа без `encrypted_bytes` и батч-загрузка списка капсул**:
    - В `buildCapsuleDtosBatch` и `buildCapsuleDto` выборка из `CapsuleMedia` выполняется строго по колонкам `id`, `capsuleId`, `kind`, `mime`, `sizeBytes`, `durationMs` без чтения BLOB-поля `encrypted_bytes` (чтение и расшифровка BLOB оставлены только в `GET /api/v1/capsules/{id}/media/{mediaId}`).
    - `getVisibleCapsuleIds` переведён на одиночный SQL-запрос с подзапросами `inSubQuery`/`notInSubQuery`, а `buildCapsuleDtosBatch` загружает капсулы (с `LEFT JOIN Users`), участников, этапы и метаданные медиа за 4 батч-запроса `inList`. Суммарно `GET /api/v1/capsules` выполняет 5 SQL-запросов в транзакции (6 включая проверку сессии), независимо от числа капсул.
+2. **R1.2 (Аудит 2 и 12): Постоянная разблокировка открытой гео-капсулы (`openedAt != null`) и `hasUnlockedStage` vs `isFullyUnlocked`**:
+   - Если у участника `openedAt != null`, гео-условие считается выполненным навсегда (`geoSatisfied = !isGeoLocked || myOpenedAt != null || allParticipantsNearbyAndRecent`) как при сборке `CapsuleDto` (расшифровка текста этапов), так и при выдаче медиа (`GET /api/v1/capsules/{id}/media/{mediaId}`).
+   - В `CapsuleDto` обоих модулей аддитивно добавлено поле `val hasUnlockedStage: Boolean = false`. Поле `hasUnlockedStage` истинно, когда открыт хотя бы один этап, а `isFullyUnlocked` — когда открыты все этапы (`stages.all { it.isUnlocked }`).
+   - Статус `READY`, проверка `POST /api/v1/capsules/{id}/open`, доступ к медиа и клиентские проверки открытия (Радар, Полка капсул, Таймлайн, Главная, `CapsuleViewModel`) переведены на `hasUnlockedStage`.
 

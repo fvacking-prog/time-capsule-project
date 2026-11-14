@@ -82,7 +82,8 @@ data class CapsuleDto(
     val archived: Boolean = false,
     val creatorHandle: String? = null,
     val isInbox: Boolean = false,
-    val media: List<CapsuleMediaDto> = emptyList()
+    val media: List<CapsuleMediaDto> = emptyList(),
+    val hasUnlockedStage: Boolean = false
 )
 
 @Serializable

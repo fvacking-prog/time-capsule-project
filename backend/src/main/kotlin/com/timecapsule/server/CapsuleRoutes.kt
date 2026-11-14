@@ -643,7 +643,7 @@ fun Route.capsuleRoutes() {
                 }
                 val now = System.currentTimeMillis()
                 val currentDto = buildCapsuleDto(capsuleId, now, requestingUserId = authenticatedUserId)
-                if (!currentDto.isFullyUnlocked) {
+                if (!currentDto.hasUnlockedStage) {
                     throw ConflictException("Капсула ещё не разблокирована. Открытие невозможно до наступления условий.")
                 }
 
@@ -716,13 +716,17 @@ fun Route.capsuleRoutes() {
                     .where { CapsuleStages.capsuleId eq capsuleId }
                     .minOfOrNull { it[CapsuleStages.unlockDate] } ?: Long.MAX_VALUE
 
-                val allParticipantsNearbyAndRecent = if (!isGeoLocked) {
+                val participants = (CapsuleParticipants innerJoin Users)
+                    .selectAll()
+                    .where { CapsuleParticipants.capsuleId eq capsuleId }
+                    .toList()
+                val myOpenedAt = participants
+                    .firstOrNull { it[CapsuleParticipants.userId] == authenticatedUserId }
+                    ?.get(CapsuleParticipants.openedAt)
+
+                val geoSatisfied = if (!isGeoLocked || myOpenedAt != null) {
                     true
                 } else {
-                    val participants = (CapsuleParticipants innerJoin Users)
-                        .selectAll()
-                        .where { CapsuleParticipants.capsuleId eq capsuleId }
-                        .toList()
                     participants.isNotEmpty() && participants.all { row ->
                         GeoUtils.isNearbyAndRecent(
                             lastLat = row[CapsuleParticipants.lastLat],
@@ -736,8 +740,8 @@ fun Route.capsuleRoutes() {
                     }
                 }
 
-                val isUnlocked = now >= earliestUnlockDate && allParticipantsNearbyAndRecent
-                if (!isUnlocked) {
+                val hasUnlockedStage = now >= earliestUnlockDate && geoSatisfied
+                if (!hasUnlockedStage) {
                     throw ConflictException("Медиа недоступно до наступления даты открытия и выполнения гео-условий")
                 }
 
@@ -1255,21 +1259,30 @@ private fun assembleCapsuleDto(
         )
     }
 
+    val myParticipant = if (requestingUserId != null) {
+        participants.firstOrNull { it.userId == requestingUserId }
+    } else {
+        null
+    }
+    val myOpenedAt = myParticipant?.openedAt
+    val myArchived = myParticipant?.archived ?: false
+
     val allParticipantsNearbyAndRecent = if (!isGeoLocked) {
         true
     } else {
         participants.isNotEmpty() && participants.all { it.isNearbyAndRecent }
     }
+    val geoSatisfied = !isGeoLocked || myOpenedAt != null || allParticipantsNearbyAndRecent
 
     val stages = stageRows.map { row ->
         val unlockDate = row[CapsuleStages.unlockDate]
         val encryptedText = row[CapsuleStages.encryptedText]
-        val isUnlocked = now >= unlockDate && allParticipantsNearbyAndRecent
+        val isUnlocked = now >= unlockDate && geoSatisfied
         val text = GeoUtils.stageText(
             encryptedText = encryptedText,
             unlockDate = unlockDate,
             now = now,
-            allParticipantsNearbyAndRecent = allParticipantsNearbyAndRecent
+            allParticipantsNearbyAndRecent = geoSatisfied
         )
 
         CapsuleStageDto(
@@ -1281,7 +1294,8 @@ private fun assembleCapsuleDto(
         )
     }
 
-    val isFullyUnlocked = stages.isNotEmpty() && stages.any { it.isUnlocked } && allParticipantsNearbyAndRecent
+    val hasUnlockedStage = stages.isNotEmpty() && stages.any { it.isUnlocked } && geoSatisfied
+    val isFullyUnlocked = stages.isNotEmpty() && stages.all { it.isUnlocked } && geoSatisfied
 
     val isMember = requestingUserId != null && (
         creatorId == requestingUserId ||
@@ -1293,13 +1307,6 @@ private fun assembleCapsuleDto(
         null
     }
 
-    val myParticipant = if (requestingUserId != null) {
-        participants.firstOrNull { it.userId == requestingUserId }
-    } else {
-        null
-    }
-    val myOpenedAt = myParticipant?.openedAt
-    val myArchived = myParticipant?.archived ?: false
     val isInbox = requestingUserId != null &&
         creatorId != requestingUserId &&
         (myParticipant?.role == "RECIPIENT" || (!isGeoLocked && myParticipant != null))
@@ -1307,7 +1314,7 @@ private fun assembleCapsuleDto(
     val status = when {
         myArchived -> "ARCHIVED"
         myOpenedAt != null -> "OPENED"
-        isFullyUnlocked -> "READY"
+        hasUnlockedStage -> "READY"
         else -> "SEALED"
     }
 
@@ -1342,6 +1349,7 @@ private fun assembleCapsuleDto(
         archived = myArchived,
         creatorHandle = creatorHandle,
         isInbox = isInbox,
-        media = media
+        media = media,
+        hasUnlockedStage = hasUnlockedStage
     )
 }

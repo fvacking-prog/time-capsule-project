@@ -2012,6 +2012,97 @@ class BackendUnitTests {
             "Capsule list query must NOT select encrypted_bytes column: $executedQueries"
         )
     }
+
+    @Test
+    fun `opened geo capsule stays unlocked forever for text and media after 61s and supports multi-stage hasUnlockedStage`() = testApplication {
+        val testDb = Database.connect(
+            url = "jdbc:h2:mem:test_geo_forever_${UUID.randomUUID()};DB_CLOSE_DELAY=-1",
+            driver = "org.h2.Driver"
+        )
+        val now = System.currentTimeMillis()
+        var sessionToken = ""
+        val capId = "cap_geo_forever"
+        val mediaId = "media_geo_forever"
+        val photoBytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte(), 1, 2, 3, 4)
+
+        transaction(testDb) {
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks, CapsuleMedia)
+            Users.insert {
+                it[id] = "user_geo"
+                it[username] = "GeoUser"
+                it[handle] = "geo_user"
+            }
+            sessionToken = createSessionToken("user_geo", now)
+
+            Capsules.insert {
+                it[id] = capId
+                it[creatorId] = "user_geo"
+                it[title] = "Geo Multi-Stage Capsule"
+                it[latitude] = 40.2825
+                it[longitude] = 69.6221
+                it[radiusMeters] = 50.0
+                it[createdAt] = now - 120_000L
+                it[isGroupCapsule] = false
+                it[isGeoLocked] = true
+                it[kind] = "PHOTO"
+            }
+            CapsuleParticipants.insert {
+                it[capsuleId] = capId
+                it[userId] = "user_geo"
+                it[lastLat] = 40.2825
+                it[lastLon] = 69.6221
+                it[lastSeenAt] = now - 90_000L // stale (>60s)
+                it[openedAt] = now - 80_000L   // already opened!
+                it[role] = "CREATOR"
+            }
+            CapsuleStages.insert {
+                it[id] = "stage_geo_f1"
+                it[capsuleId] = capId
+                it[stageNumber] = 1
+                it[unlockDate] = now - 100_000L
+                it[encryptedText] = CryptoUtils.encrypt("Stage 1 Open Forever")
+            }
+            CapsuleStages.insert {
+                it[id] = "stage_geo_f2"
+                it[capsuleId] = capId
+                it[stageNumber] = 2
+                it[unlockDate] = now + 3_600_000L
+                it[encryptedText] = CryptoUtils.encrypt("Stage 2 Future")
+            }
+            CapsuleMedia.insert {
+                it[id] = mediaId
+                it[capsuleId] = capId
+                it[kind] = "PHOTO"
+                it[mime] = "image/jpeg"
+                it[sizeBytes] = photoBytes.size.toLong()
+                it[encryptedBytes] = CryptoUtils.encryptBytes(photoBytes)
+                it[createdAt] = now - 120_000L
+            }
+        }
+
+        application {
+            installSerializationAndErrors()
+            routing { capsuleRoutes() }
+        }
+
+        // Even though lastSeenAt is >60s old (90s ago), openedAt != null keeps stage 1 text and media unlocked
+        transaction(testDb) {
+            val dto = buildCapsuleDto(capId, now = now, requestingUserId = "user_geo")
+            assertEquals("OPENED", dto.status)
+            assertTrue(dto.hasUnlockedStage)
+            assertFalse(dto.isFullyUnlocked)
+            assertTrue(dto.stages[0].isUnlocked)
+            assertEquals("Stage 1 Open Forever", dto.stages[0].text)
+            assertFalse(dto.stages[1].isUnlocked)
+            assertEquals(GeoUtils.LOCKED_PLACEHOLDER, dto.stages[1].text)
+        }
+
+        val mediaResp = client.get("/api/v1/capsules/$capId/media/$mediaId") {
+            header(HttpHeaders.Authorization, "Bearer $sessionToken")
+        }
+        assertEquals(HttpStatusCode.OK, mediaResp.status)
+        assertTrue(photoBytes.contentEquals(mediaResp.readBytes()))
+    }
 }
 
 

@@ -133,9 +133,9 @@ fun CapsulesShelfScreen(
         c.isInbox || (currentUserId != null && c.creatorId != currentUserId && !c.isGeoLocked)
     }
     val displayedList = when (uiState.selectedTab) {
-        0 -> searchedList.filter { !isInboxCapsule(it) && (it.status == "SEALED" || (!it.isFullyUnlocked && it.status != "OPENED")) && !it.archived && it.status != "ARCHIVED" }
+        0 -> searchedList.filter { !isInboxCapsule(it) && (it.status == "SEALED" || (!it.hasUnlockedStage && it.status != "OPENED")) && !it.archived && it.status != "ARCHIVED" }
         1 -> searchedList.filter { isInboxCapsule(it) && !it.archived && it.status != "ARCHIVED" }
-        2 -> searchedList.filter { (it.status == "READY" || (it.isFullyUnlocked && it.status != "OPENED")) && !it.archived && it.status != "ARCHIVED" }
+        2 -> searchedList.filter { (it.status == "READY" || (it.hasUnlockedStage && it.status != "OPENED")) && !it.archived && it.status != "ARCHIVED" }
         3 -> searchedList.filter { it.status == "OPENED" && !it.archived }
         4 -> searchedList.filter { it.status == "ARCHIVED" || it.archived }
         else -> searchedList

@@ -77,11 +77,11 @@ fun HomeScreen(
     }
 
     // Find closest sealed capsule
-    val sealedCapsules = uiState.myCapsules.filter { it.status == "SEALED" || !it.isFullyUnlocked }
+    val sealedCapsules = uiState.myCapsules.filter { !it.archived && (it.status == "SEALED" || (!it.hasUnlockedStage && it.status != "OPENED")) }
     val closestCapsule = sealedCapsules.minByOrNull { cap ->
-        cap.stages.firstOrNull()?.unlockDate ?: Long.MAX_VALUE
+        cap.stages.firstOrNull { !it.isUnlocked }?.unlockDate ?: cap.stages.firstOrNull()?.unlockDate ?: Long.MAX_VALUE
     }
-    val closestUnlockDate = closestCapsule?.stages?.firstOrNull()?.unlockDate
+    val closestUnlockDate = closestCapsule?.stages?.firstOrNull { !it.isUnlocked }?.unlockDate ?: closestCapsule?.stages?.firstOrNull()?.unlockDate
 
     Column(
         modifier = Modifier
