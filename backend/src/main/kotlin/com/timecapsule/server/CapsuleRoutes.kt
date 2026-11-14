@@ -1494,6 +1494,7 @@ private fun assembleCapsuleDto(
         creatorHandle = creatorHandle,
         isInbox = isInbox,
         media = media,
-        hasUnlockedStage = hasUnlockedStage
+        hasUnlockedStage = hasUnlockedStage,
+        createdAt = capsuleRow[Capsules.createdAt]
     )
 }

@@ -83,7 +83,8 @@ data class CapsuleDto(
     val creatorHandle: String? = null,
     val isInbox: Boolean = false,
     val media: List<CapsuleMediaDto> = emptyList(),
-    val hasUnlockedStage: Boolean = false
+    val hasUnlockedStage: Boolean = false,
+    val createdAt: Long = 0L
 )
 
 @Serializable

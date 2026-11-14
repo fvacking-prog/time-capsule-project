@@ -168,4 +168,8 @@
     - Реализован `BiometricAuthHelper` на базе системного `android.hardware.biometrics.BiometricPrompt` и `BiometricManager` (API 28+ нативно поддерживается при `minSdk = 28` и работает напрямую с `ComponentActivity` без добавления внешних зависимостей).
     - В `SettingsScreen` (при установленном PIN) добавлен переключатель «Вход по отпечатку пальца», а на полноэкранном экране блокировки (`EnterPinDialog`) — автозапуск биометрии и кнопка повторного вызова с сохранением 4-значного PIN-кода как запасного способа входа.
     - В `UnlockAndConfigUnitTest` добавлены модульные тесты миграции PIN с SHA-256 на PBKDF2, 30-секундного кулдауна после 5 попыток, переноса тихих часов (23:00–08:00 → 08:00) и годовщины (через 1 год), шифрования и миграции `session_token` (AES/GCM), фильтрации устаревших координат и очистки кэша.
+15. **R3.1 (Функция 1): Поле `createdAt` в `CapsuleDto`, живой таймер в `Lifecycle.State.STARTED` и прогресс-бар выдержки на Главной**:
+    - В `CapsuleDto` синхронно добавлено поле `val createdAt: Long = 0L`, заполняемое из `Capsules.createdAt` при сборке DTO на бэкенде.
+    - В `HomeScreen` посекундный таймер обёрнут в `lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED)`, чтобы не расходовать ресурсы при уходе приложения в фон, и добавлена градиентная полоса «Выдержка воспоминания» с безопасным расчётом процента (`calculateMaturationProgress`) от `createdAt` до `unlockDate`.
+
 

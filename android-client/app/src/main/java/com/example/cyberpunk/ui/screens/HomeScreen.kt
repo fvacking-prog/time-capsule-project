@@ -39,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -46,6 +47,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.example.cyberpunk.R
 import com.example.cyberpunk.ui.theme.TokyoAccent
 import com.example.cyberpunk.ui.theme.TokyoBackground
@@ -53,11 +57,30 @@ import com.example.cyberpunk.ui.theme.TokyoBorderGradient
 import com.example.cyberpunk.ui.theme.TokyoOnBackground
 import com.example.cyberpunk.ui.theme.TokyoOnSurface
 import com.example.cyberpunk.ui.theme.TokyoPrimary
+import com.example.cyberpunk.ui.theme.TokyoPrimaryGradient
 import com.example.cyberpunk.ui.theme.TokyoSecondary
 import com.example.cyberpunk.ui.theme.TokyoSuccess
 import com.example.cyberpunk.ui.theme.TokyoSurface
 import com.example.cyberpunk.ui.viewmodel.CapsuleUiState
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
+
+fun calculateMaturationProgress(
+    createdAtMillis: Long,
+    unlockDateMillis: Long,
+    nowMillis: Long
+): Float {
+    if (nowMillis >= unlockDateMillis) return 1f
+    val effectiveStart = if (createdAtMillis in 1 until unlockDateMillis) {
+        createdAtMillis
+    } else {
+        unlockDateMillis - 24L * 60L * 60L * 1000L
+    }
+    val totalSpan = unlockDateMillis - effectiveStart
+    if (totalSpan <= 0L) return 0f
+    val elapsed = (nowMillis - effectiveStart).coerceIn(0L, totalSpan)
+    return (elapsed.toFloat() / totalSpan.toFloat()).coerceIn(0f, 1f)
+}
 
 @Composable
 fun HomeScreen(
@@ -67,12 +90,15 @@ fun HomeScreen(
     onOpenJoinDialog: () -> Unit,
     onNavigateToCapsules: () -> Unit
 ) {
+    val lifecycleOwner = LocalLifecycleOwner.current
     var currentTimeMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1000L)
-            currentTimeMillis = System.currentTimeMillis()
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                currentTimeMillis = System.currentTimeMillis()
+                delay(1000L)
+            }
         }
     }
 
@@ -200,6 +226,13 @@ fun HomeScreen(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(
+                    if (closestCapsule != null) {
+                        Modifier.clickable { onNavigateToCapsules() }
+                    } else {
+                        Modifier
+                    }
+                )
                 .border(1.dp, TokyoBorderGradient, RoundedCornerShape(20.dp)),
             colors = CardDefaults.cardColors(containerColor = TokyoSurface),
             shape = RoundedCornerShape(20.dp)
@@ -240,6 +273,12 @@ fun HomeScreen(
                     val hours = (remainingMs / (60 * 60 * 1000L)) % 24
                     val minutes = (remainingMs / (60 * 1000L)) % 60
                     val seconds = (remainingMs / 1000L) % 60
+                    val maturationProgress = calculateMaturationProgress(
+                        createdAtMillis = closestCapsule.createdAt,
+                        unlockDateMillis = closestUnlockDate,
+                        nowMillis = currentTimeMillis
+                    )
+                    val maturationPercent = (maturationProgress * 100f).roundToInt().coerceIn(0, 100)
 
                     Text(
                         text = closestCapsule.title,
@@ -257,6 +296,36 @@ fun HomeScreen(
                         CountdownUnitBox(value = hours.toString().padStart(2, '0'), label = "часов")
                         CountdownUnitBox(value = minutes.toString().padStart(2, '0'), label = "мин")
                         CountdownUnitBox(value = seconds.toString().padStart(2, '0'), label = "сек")
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.home_maturation_label, maturationPercent),
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                color = TokyoAccent,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(TokyoBackground.copy(alpha = 0.7f))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(maturationProgress.coerceIn(0.02f, 1f))
+                                    .height(8.dp)
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .background(TokyoPrimaryGradient)
+                            )
+                        }
                     }
                 } else {
                     Text(

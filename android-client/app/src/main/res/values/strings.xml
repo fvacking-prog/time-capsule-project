@@ -168,6 +168,7 @@
     <string name="home_closest_unlock_title">Ближайшее открытие</string>
     <string name="home_closest_unlock_empty">Нет запечатанных капсул</string>
     <string name="home_closest_countdown_format">До открытия: %1$d дн. %2$d ч. %3$d мин.</string>
+    <string name="home_maturation_label">Выдержка воспоминания: %1$d%%</string>
     <string name="home_quick_radar_title">Гео-радар синхронизации</string>
     <string name="home_quick_radar_desc">Открыть радар для поиска и чекина с друзьями на месте</string>
     <string name="home_card_join_title">Присоединиться по коду</string>
