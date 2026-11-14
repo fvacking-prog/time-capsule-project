@@ -843,11 +843,12 @@ fun CreateCapsuleScreen(
                                                 isPlayingVoice = true
                                             }
                                         }
-                                    }
+                                    },
+                                    modifier = Modifier.size(48.dp)
                                 ) {
                                     Icon(
                                         imageVector = if (isPlayingVoice) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                        contentDescription = null,
+                                        contentDescription = if (isPlayingVoice) "Пауза" else "Прослушать запись",
                                         tint = TokyoSecondary,
                                         modifier = Modifier.size(28.dp)
                                     )
@@ -1265,7 +1266,7 @@ fun CreateCapsuleScreen(
                             )
                             IconButton(
                                 onClick = { onRemoveStage(stageIndex) },
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier.size(48.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Delete,

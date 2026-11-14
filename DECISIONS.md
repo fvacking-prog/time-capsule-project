@@ -183,6 +183,11 @@
       - `shareCapsuleLetterPdf` формирует многостраничный PDF-документ (`android.graphics.pdf.PdfDocument`) с метаданными капсулы и полным текстом открытых этапов.
     - Файлы сохраняются в `cacheDir/capsule-share/` (добавлен путь в `file_paths.xml` и автоочистка старше 24 ч в `MediaHelper`) и передаются в системный Share Sheet (`Intent.ACTION_SEND`) через `FileProvider`.
     - На экране `CapsuleStagesTimeline` для открытых капсул добавлен блок «Поделиться и сохранить» с кнопками «Поделиться карточкой» и «Сохранить в PDF».
+19. **R3.5 (Аудит 24, 27, 33): Доступность TalkBack (`contentDescription` и 48 dp touch target), контраст вторичного текста и переиспользование `Path` в `Capsule3DView`**:
+    - В `Capsule3DView` для отрисовки угловых визиров HUD в `drawCyberpunkBackdrop` используется заранее выделенный `val hudPath = remember { Path() }` с `hudPath.rewind()` без аллокаций в кадре; к `Canvas` в `Capsule3DView` и `RadarScreen` добавлены семантические описания `Modifier.semantics { contentDescription = ... }`.
+    - В `CapsulesShelfScreen`, `CapsuleStagesTimeline` и `CreateCapsuleScreen` размер интерактивных `IconButton` доведён до `48.dp` и заданы осмысленные `contentDescription` для кнопок меню, повтора загрузки и аудиоплеера.
+    - В `CapsulesShelfScreen` непрозрачность вторичного текста и плейсхолдера поиска повышена до `alpha >= 0.78f` (`0.78f` и `0.82f`), а в `Theme.kt` сохранён высококонтрастный `onSurfaceVariant = TokyoOnSurface` (`#A9B1D6`).
+
 
 
 

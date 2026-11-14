@@ -173,7 +173,7 @@ fun CapsulesShelfScreen(
                     placeholder = {
                         Text(
                             text = stringResource(R.string.search_capsules_hint),
-                            color = TokyoOnSurface.copy(alpha = 0.6f),
+                            color = TokyoOnSurface.copy(alpha = 0.78f),
                             fontSize = 14.sp
                         )
                     },
@@ -441,11 +441,11 @@ private fun ShelfCapsuleCard(
                 Box {
                     IconButton(
                         onClick = { showMenu = true },
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.MoreVert,
-                            contentDescription = null,
+                            contentDescription = "Действия с капсулой",
                             tint = TokyoOnSurface
                         )
                     }
@@ -619,7 +619,7 @@ private fun ShelfCapsuleCard(
                     Text(
                         text = stringResource(R.string.sealed_until_format, dateStr),
                         style = MaterialTheme.typography.bodySmall.copy(
-                            color = TokyoOnSurface.copy(alpha = 0.72f),
+                            color = TokyoOnSurface.copy(alpha = 0.82f),
                             fontSize = 11.sp
                         )
                     )

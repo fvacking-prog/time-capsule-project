@@ -355,18 +355,26 @@ private fun PhotoMediaCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(stringResource(R.string.media_download_error), style = MaterialTheme.typography.bodySmall, color = TokyoError)
-                IconButton(onClick = {
-                    isLoading = true
-                    hasError = false
-                    retryTrigger++
-                }) {
-                    Icon(Icons.Default.Refresh, null, tint = TokyoPrimary, modifier = Modifier.size(18.dp))
+                IconButton(
+                    onClick = {
+                        isLoading = true
+                        hasError = false
+                        retryTrigger++
+                    },
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = stringResource(R.string.btn_refresh),
+                        tint = TokyoPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
         } else {
             AsyncImage(
                 model = file,
-                contentDescription = null,
+                contentDescription = stringResource(R.string.attachment_photo_title),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(200.dp)
@@ -503,12 +511,20 @@ private fun VoiceMediaCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(stringResource(R.string.media_download_error), style = MaterialTheme.typography.bodySmall, color = TokyoError)
-                IconButton(onClick = {
-                    isLoading = true
-                    hasError = false
-                    retryTrigger++
-                }) {
-                    Icon(Icons.Default.Refresh, null, tint = TokyoSecondary, modifier = Modifier.size(18.dp))
+                IconButton(
+                    onClick = {
+                        isLoading = true
+                        hasError = false
+                        retryTrigger++
+                    },
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = stringResource(R.string.btn_refresh),
+                        tint = TokyoSecondary,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
         } else {
@@ -533,11 +549,12 @@ private fun VoiceMediaCard(
                                 if (totalDurationMs <= 0) totalDurationMs = player.duration()
                             }
                         }
-                    }
+                    },
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
                         imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = null,
+                        contentDescription = if (isPlaying) "Пауза" else "Воспроизвести голосовое послание",
                         tint = TokyoSecondary,
                         modifier = Modifier.size(32.dp)
                     )

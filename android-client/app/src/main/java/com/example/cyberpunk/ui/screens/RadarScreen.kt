@@ -69,6 +69,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -571,13 +573,19 @@ private fun AnimatedGeoRadarCard(
             }
 
             // Expanding concentric circles Radar Canvas
+            val nearbyCount = capsule.participants.count { it.isNearbyAndRecent }
+            val radarSemanticDesc = "Гео-радар синхронизации: участников рядом $nearbyCount из ${capsule.participants.size}"
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(190.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Canvas(modifier = Modifier.size(180.dp)) {
+                Canvas(
+                    modifier = Modifier
+                        .size(180.dp)
+                        .semantics { contentDescription = radarSemanticDesc }
+                ) {
                     val center = Offset(size.width / 2f, size.height / 2f)
                     val maxRadius = min(size.width, size.height) / 2f
 

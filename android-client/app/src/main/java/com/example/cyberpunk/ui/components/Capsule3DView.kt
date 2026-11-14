@@ -46,13 +46,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
@@ -571,16 +575,24 @@ fun Capsule3DView(
         }
     }
 
-    // Pre-allocated 3D mesh and native BlurMaskFilter paints
+    // Pre-allocated 3D mesh, HUD path, and native BlurMaskFilter paints
     val mesh = remember { Capsule3DMesh() }
     val neonPaints = remember { NeonGlowPaints() }
+    val hudPath = remember { Path() }
 
     // Адаптивное качество для устройств со слабым GPU: если кадр длится > 24 мс, снижаем число проходов свечения
     var avgFrameDurationMs by remember { mutableFloatStateOf(16f) }
     val isWeakGpu = avgFrameDurationMs > 24f
 
+    val canvasSemanticDesc = if (isUnlocked) {
+        "3D-модель капсулы времени: разблокирована. Нажмите для просмотра послания."
+    } else {
+        "3D-модель капсулы времени: запечатана."
+    }
+
     Canvas(
         modifier = modifier
+            .semantics { contentDescription = canvasSemanticDesc }
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { currentOnClick() }
@@ -612,7 +624,8 @@ fun Capsule3DView(
             centerOffset = centerOffset,
             minDim = minDim,
             statusColor = statusGlowColor,
-            isSyncing = isSyncing
+            isSyncing = isSyncing,
+            hudPath = hudPath
         )
 
         // 2. Transform and Project 3D Geometry
@@ -677,13 +690,15 @@ fun Capsule3DView(
     }
 }
 
-private val ShockwaveStroke = androidx.compose.ui.graphics.drawscope.Stroke(width = 4f)
+private val ShockwaveStroke = Stroke(width = 4f)
+private val HudReticleStroke = Stroke(width = 2f, cap = StrokeCap.Round)
 
 private fun DrawScope.drawCyberpunkBackdrop(
     centerOffset: Offset,
     minDim: Float,
     statusColor: Color,
-    isSyncing: Boolean
+    isSyncing: Boolean,
+    hudPath: Path
 ) {
     // Deep Tokyo Night surface vignette (zero allocations per frame)
     drawRect(color = TokyoBg)
@@ -710,27 +725,30 @@ private fun DrawScope.drawCyberpunkBackdrop(
         center = centerOffset
     )
 
-    // Cyberpunk HUD Corner Reticles
+    // Cyberpunk HUD Corner Reticles (reusing pre-allocated Path via rewind())
     val pad = minDim * 0.06f
     val bracketLen = minDim * 0.075f
     val hudColor = if (isSyncing) TokyoCyan.copy(alpha = 0.55f) else TokyoBlue.copy(alpha = 0.32f)
-    val strokeW = max(1.5f, minDim * 0.0035f)
 
+    hudPath.rewind()
     // Top-Left
-    drawLine(hudColor, Offset(pad, pad), Offset(pad + bracketLen, pad), strokeW)
-    drawLine(hudColor, Offset(pad, pad), Offset(pad, pad + bracketLen), strokeW)
-
+    hudPath.moveTo(pad, pad + bracketLen)
+    hudPath.lineTo(pad, pad)
+    hudPath.lineTo(pad + bracketLen, pad)
     // Top-Right
-    drawLine(hudColor, Offset(size.width - pad, pad), Offset(size.width - pad - bracketLen, pad), strokeW)
-    drawLine(hudColor, Offset(size.width - pad, pad), Offset(size.width - pad, pad + bracketLen), strokeW)
-
+    hudPath.moveTo(size.width - pad - bracketLen, pad)
+    hudPath.lineTo(size.width - pad, pad)
+    hudPath.lineTo(size.width - pad, pad + bracketLen)
     // Bottom-Left
-    drawLine(hudColor, Offset(pad, size.height - pad), Offset(pad + bracketLen, size.height - pad), strokeW)
-    drawLine(hudColor, Offset(pad, size.height - pad), Offset(pad, size.height - pad - bracketLen), strokeW)
-
+    hudPath.moveTo(pad, size.height - pad - bracketLen)
+    hudPath.lineTo(pad, size.height - pad)
+    hudPath.lineTo(pad + bracketLen, size.height - pad)
     // Bottom-Right
-    drawLine(hudColor, Offset(size.width - pad, size.height - pad), Offset(size.width - pad - bracketLen, size.height - pad), strokeW)
-    drawLine(hudColor, Offset(size.width - pad, size.height - pad), Offset(size.width - pad, size.height - pad - bracketLen), strokeW)
+    hudPath.moveTo(size.width - pad - bracketLen, size.height - pad)
+    hudPath.lineTo(size.width - pad, size.height - pad)
+    hudPath.lineTo(size.width - pad, size.height - pad - bracketLen)
+
+    drawPath(path = hudPath, color = hudColor, style = HudReticleStroke)
 }
 
 private fun DrawScope.drawGlowingCore(
