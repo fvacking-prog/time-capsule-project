@@ -1930,6 +1930,7 @@ class BackendUnitTests {
         transaction(testDb) {
             assertEquals(0L, CapsuleMedia.selectAll().where { CapsuleMedia.capsuleId eq capsuleId }.count())
             assertEquals(0L, Capsules.selectAll().where { Capsules.id eq capsuleId }.count())
+            assertEquals(0L, Users.selectAll().where { Users.id eq "user_creator" }.count())
         }
     }
 

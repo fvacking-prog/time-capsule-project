@@ -300,6 +300,7 @@ fun Route.capsuleRoutes() {
             CapsuleParticipants.deleteWhere { userId eq authenticatedUserId }
             Blocks.deleteWhere { (blockerId eq authenticatedUserId) or (blockedUserId eq authenticatedUserId) }
             Sessions.deleteWhere { userId eq authenticatedUserId }
+            Users.deleteWhere { id eq authenticatedUserId }
         }
         call.respond(MessageResponse("Все данные пользователя успешно удалены"))
     }

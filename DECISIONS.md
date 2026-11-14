@@ -114,4 +114,6 @@
    - Если у участника `openedAt != null`, гео-условие считается выполненным навсегда (`geoSatisfied = !isGeoLocked || myOpenedAt != null || allParticipantsNearbyAndRecent`) как при сборке `CapsuleDto` (расшифровка текста этапов), так и при выдаче медиа (`GET /api/v1/capsules/{id}/media/{mediaId}`).
    - В `CapsuleDto` обоих модулей аддитивно добавлено поле `val hasUnlockedStage: Boolean = false`. Поле `hasUnlockedStage` истинно, когда открыт хотя бы один этап, а `isFullyUnlocked` — когда открыты все этапы (`stages.all { it.isUnlocked }`).
    - Статус `READY`, проверка `POST /api/v1/capsules/{id}/open`, доступ к медиа и клиентские проверки открытия (Радар, Полка капсул, Таймлайн, Главная, `CapsuleViewModel`) переведены на `hasUnlockedStage`.
+3. **R1.3 (Аудит 5): Полное удаление записи `Users` и медиа при `DELETE /api/v1/me/data`**:
+   - В транзакции `DELETE /api/v1/me/data` после каскадного удаления медиа (`CapsuleMedia`), этапов (`CapsuleStages`), участий (`CapsuleParticipants`), капсул (`Capsules`), блокировок (`Blocks`) и сессий (`Sessions`) добавлено удаление самой строки пользователя `Users.deleteWhere { id eq authenticatedUserId }`.
 
