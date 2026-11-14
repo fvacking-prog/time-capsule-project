@@ -79,6 +79,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.AsyncImage
 import com.example.cyberpunk.BuildConfig
 import com.example.cyberpunk.R
+import com.example.cyberpunk.data.BiometricAuthHelper
 import com.example.cyberpunk.ui.theme.TokyoAccent
 import com.example.cyberpunk.ui.theme.TokyoBackground
 import com.example.cyberpunk.ui.theme.TokyoError
@@ -110,6 +111,7 @@ fun SettingsScreen(
     onOpenServerSettings: () -> Unit,
     onOpenSetPinDialog: () -> Unit,
     onRemovePin: () -> Unit,
+    onToggleBiometric: (Boolean) -> Unit = {},
     onToggleNotifications: (Boolean) -> Unit,
     onToggleQuietHours: (Boolean) -> Unit = {},
     onExportData: () -> Unit,
@@ -440,6 +442,38 @@ fun SettingsScreen(
                             checkedTrackColor = TokyoPrimary
                         )
                     )
+                }
+
+                if (uiState.isPinSet) {
+                    val biometricAvailable = remember(context) { BiometricAuthHelper.isBiometricAvailable(context) }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.biometric_lock_title),
+                                style = MaterialTheme.typography.bodyMedium.copy(color = TokyoOnBackground)
+                            )
+                            Text(
+                                text = stringResource(R.string.biometric_lock_desc),
+                                style = MaterialTheme.typography.bodySmall.copy(color = TokyoOnSurface)
+                            )
+                        }
+
+                        Switch(
+                            checked = uiState.isBiometricEnabled,
+                            enabled = biometricAvailable,
+                            onCheckedChange = onToggleBiometric,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = TokyoBackground,
+                                checkedTrackColor = TokyoAccent
+                            )
+                        )
+                    }
                 }
 
                 // Notifications toggle

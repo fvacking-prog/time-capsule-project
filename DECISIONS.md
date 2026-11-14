@@ -164,4 +164,8 @@
     - В `MediaHelper.cleanupStaleTempFiles` при старте приложения удаляются временные файлы в `cacheDir/capsule-media` старше 24 часов (`MAX_TEMP_FILE_AGE_MS = 86_400_000L`).
     - В `LocationProvider` последние известные координаты (`lastLocation` / `getLastKnownLocation`) старше 2 минут (`MAX_LAST_KNOWN_LOCATION_AGE_MS = 120_000L`) отбрасываются через `isLocationFresh`.
     - В `AppUpdateManager.cleanupInstalledApksOnStart` (и при статусе `UP_TO_DATE` в `checkForUpdates`) удаляются скачанные файлы обновлений в `cacheDir/apk-updates/`, если текущая версия приложения уже актуальна.
+14. **R2.4 (Функция 7): Биометрическая разблокировка (`BiometricAuthHelper`) и модульные тесты Фазы R2**:
+    - Реализован `BiometricAuthHelper` на базе системного `android.hardware.biometrics.BiometricPrompt` и `BiometricManager` (API 28+ нативно поддерживается при `minSdk = 28` и работает напрямую с `ComponentActivity` без добавления внешних зависимостей).
+    - В `SettingsScreen` (при установленном PIN) добавлен переключатель «Вход по отпечатку пальца», а на полноэкранном экране блокировки (`EnterPinDialog`) — автозапуск биометрии и кнопка повторного вызова с сохранением 4-значного PIN-кода как запасного способа входа.
+    - В `UnlockAndConfigUnitTest` добавлены модульные тесты миграции PIN с SHA-256 на PBKDF2, 30-секундного кулдауна после 5 попыток, переноса тихих часов (23:00–08:00 → 08:00) и годовщины (через 1 год), шифрования и миграции `session_token` (AES/GCM), фильтрации устаревших координат и очистки кэша.
 

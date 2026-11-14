@@ -79,6 +79,7 @@ import com.example.cyberpunk.ui.screens.SettingsScreen
 import com.example.cyberpunk.ui.theme.TimeCapsuleTheme
 import com.example.cyberpunk.ui.theme.TokyoAccent
 import com.example.cyberpunk.ui.theme.TokyoBackground
+import com.example.cyberpunk.data.BiometricAuthHelper
 import com.example.cyberpunk.data.CapsuleUnlockScheduler
 import com.example.cyberpunk.ui.theme.TokyoOnSurface
 import com.example.cyberpunk.ui.theme.TokyoPrimary
@@ -245,6 +246,17 @@ fun TimeCapsuleApp(
     }
 
     if (uiState.isPinSet && !uiState.isPinUnlocked) {
+        val canUseBiometric = remember(context, uiState.isBiometricEnabled) {
+            uiState.isBiometricEnabled && BiometricAuthHelper.isBiometricAvailable(context)
+        }
+        LaunchedEffect(canUseBiometric) {
+            if (canUseBiometric) {
+                BiometricAuthHelper.authenticate(
+                    context = context,
+                    onSuccess = capsuleViewModel::unlockViaBiometric
+                )
+            }
+        }
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = TokyoBackground,
@@ -258,6 +270,13 @@ fun TimeCapsuleApp(
                 EnterPinDialog(
                     errorText = uiState.pinError,
                     lockoutRemainingSeconds = uiState.pinLockoutRemainingSeconds,
+                    showBiometricButton = canUseBiometric,
+                    onBiometricClick = {
+                        BiometricAuthHelper.authenticate(
+                            context = context,
+                            onSuccess = capsuleViewModel::unlockViaBiometric
+                        )
+                    },
                     onPinEntered = capsuleViewModel::verifyPin,
                     onForgotPin = capsuleViewModel::forgotPin
                 )
@@ -675,6 +694,7 @@ fun TimeCapsuleApp(
                     onOpenServerSettings = capsuleViewModel::openSettingsDialog,
                     onOpenSetPinDialog = capsuleViewModel::openSetPinDialog,
                     onRemovePin = capsuleViewModel::removePin,
+                    onToggleBiometric = capsuleViewModel::toggleBiometric,
                     onToggleNotifications = capsuleViewModel::toggleNotifications,
                     onToggleQuietHours = capsuleViewModel::toggleQuietHours,
                     onExportData = { capsuleViewModel.exportData(context) },

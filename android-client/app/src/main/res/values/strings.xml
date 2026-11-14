@@ -286,6 +286,11 @@
     <string name="settings_about_section">О приложении</string>
     <string name="pin_lock_title">PIN-блокировка приложения</string>
     <string name="pin_lock_desc">Защита доступа 4-значным PIN-кодом (PBKDF2-HMAC-SHA256 с солью)</string>
+    <string name="biometric_lock_title">Вход по отпечатку пальца</string>
+    <string name="biometric_lock_desc">Разблокировка по биометрии (PIN-код остаётся запасным способом)</string>
+    <string name="biometric_prompt_title">Разблокировка Time Capsule</string>
+    <string name="biometric_prompt_subtitle">Приложите палец к сканеру для входа</string>
+    <string name="biometric_use_pin">Ввести PIN</string>
     <string name="dialog_set_pin_title">Установка 4-значного PIN-кода</string>
     <string name="dialog_enter_pin_title">Введите PIN-код для входа</string>
     <string name="pin_incorrect">Неверный PIN-код</string>

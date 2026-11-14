@@ -1,16 +1,26 @@
 package com.example.cyberpunk
 
 import com.example.cyberpunk.data.ApiConfig
+import com.example.cyberpunk.data.AppUpdateManager
 import com.example.cyberpunk.data.AppUpdatePolicy
 import com.example.cyberpunk.data.CapsuleUnlockScheduler
 import com.example.cyberpunk.data.ColdStartRetry
 import com.example.cyberpunk.data.GeoHelper
+import com.example.cyberpunk.data.LocationProvider
+import com.example.cyberpunk.data.MediaHelper
+import com.example.cyberpunk.data.PinAttemptState
+import com.example.cyberpunk.data.PinCheckResult
 import com.example.cyberpunk.data.SessionExpiredException
 import com.example.cyberpunk.data.UpdateRequirement
+import com.example.cyberpunk.data.UserPreferences
 import com.timecapsule.shared.AppVersionDto
 import java.io.File
 import java.net.ConnectException
 import java.net.SocketTimeoutException
+import java.nio.file.Files
+import javax.crypto.KeyGenerator
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlinx.coroutines.runBlocking
 import com.example.cyberpunk.data.HandleLocalValidation
 import com.example.cyberpunk.data.HandleValidator
@@ -281,6 +291,177 @@ class UnlockAndConfigUnitTest {
         val upToDateEval = AppUpdatePolicy.evaluate(optionalInfo.copy(versionCode = 1), currentVersionCode = 1)
         assertEquals(UpdateRequirement.UP_TO_DATE, upToDateEval.requirement)
         assertFalse(upToDateEval.isMandatory)
+    }
+
+    @Test
+    fun `UserPreferences migrates legacy SHA-256 PIN to PBKDF2WithHmacSHA256 on first valid input`() {
+        val legacySalt = "0123456789abcdef0123456789abcdef"
+        val pin = "4829"
+        val legacyHash = UserPreferences.hashPinLegacySha256(legacySalt, pin)
+        assertFalse(legacyHash.startsWith(UserPreferences.PBKDF2_PREFIX))
+
+        // Wrong PIN fails without migration
+        val wrongOutcome = UserPreferences.verifyAndMigratePinRecord("9999", legacySalt, legacyHash)
+        assertFalse(wrongOutcome.matched)
+        assertNull(wrongOutcome.migratedHash)
+
+        // Correct PIN matches and produces migrated PBKDF2 hash + new 16-byte salt
+        val migratedOutcome = UserPreferences.verifyAndMigratePinRecord(pin, legacySalt, legacyHash)
+        assertTrue(migratedOutcome.matched)
+        val newSalt = assertNotNull(migratedOutcome.migratedSaltHex)
+        val newHash = assertNotNull(migratedOutcome.migratedHash)
+        assertEquals(32, newSalt.length)
+        assertTrue(newHash.startsWith(UserPreferences.PBKDF2_PREFIX))
+
+        // Subsequent verification with the migrated PBKDF2 hash succeeds without re-migrating
+        val pbkdf2Outcome = UserPreferences.verifyAndMigratePinRecord(pin, newSalt, newHash)
+        assertTrue(pbkdf2Outcome.matched)
+        assertNull(pbkdf2Outcome.migratedHash)
+        assertFalse(UserPreferences.verifyAndMigratePinRecord("0000", newSalt, newHash).matched)
+    }
+
+    @Test
+    fun `UserPreferences enforces 30s cooldown after 5 failed PIN attempts`() {
+        val startMillis = 1_700_000_000_000L
+        var state = PinAttemptState()
+
+        // First 4 failed attempts decrement attemptsLeft from 4 down to 1
+        for (attempt in 1..4) {
+            val (nextState, result) = UserPreferences.evaluatePinAttempt(state, isPinCorrect = false, nowMillis = startMillis)
+            state = nextState
+            assertTrue(result is PinCheckResult.Invalid)
+            assertEquals(5 - attempt, result.attemptsLeft)
+            assertEquals(attempt, state.failedAttempts)
+        }
+
+        // 5th failed attempt triggers 30s cooldown
+        val (lockedState, fifthResult) = UserPreferences.evaluatePinAttempt(state, isPinCorrect = false, nowMillis = startMillis)
+        state = lockedState
+        assertTrue(fifthResult is PinCheckResult.LockedOut)
+        assertEquals(30, fifthResult.remainingSeconds)
+        assertEquals(startMillis + 30_000L, fifthResult.lockoutUntilMillis)
+
+        // Even correct PIN is rejected while cooldown is active (e.g. 10s later)
+        val (_, duringCooldown) = UserPreferences.evaluatePinAttempt(
+            state,
+            isPinCorrect = true,
+            nowMillis = startMillis + 10_000L
+        )
+        assertTrue(duringCooldown is PinCheckResult.LockedOut)
+        assertEquals(20, duringCooldown.remainingSeconds)
+
+        // After 30s cooldown expires, valid PIN succeeds and resets state
+        val (resetState, afterCooldown) = UserPreferences.evaluatePinAttempt(
+            state,
+            isPinCorrect = true,
+            nowMillis = startMillis + 30_001L
+        )
+        assertTrue(afterCooldown is PinCheckResult.Success)
+        assertEquals(0, resetState.failedAttempts)
+        assertEquals(0L, resetState.lockoutUntilMillis)
+    }
+
+    @Test
+    fun `CapsuleUnlockScheduler defers quiet hours 23_00-08_00 to 08_00 and calculates 1-year anniversary`() {
+        val zone = ZoneId.of("UTC")
+
+        // 23:30 on Nov 14 -> deferred to 08:00 on Nov 15
+        val lateNight = ZonedDateTime.of(2026, 11, 14, 23, 30, 0, 0, ZoneOffset.UTC).toInstant().toEpochMilli()
+        val deferredFrom23 = CapsuleUnlockScheduler.applyQuietHours(lateNight, quietHoursEnabled = true, zoneId = zone)
+        val zdt23 = Instant.ofEpochMilli(deferredFrom23).atZone(zone)
+        assertEquals(15, zdt23.dayOfMonth)
+        assertEquals(8, zdt23.hour)
+        assertEquals(0, zdt23.minute)
+
+        // 03:15 on Nov 15 -> deferred to 08:00 on Nov 15
+        val earlyMorning = ZonedDateTime.of(2026, 11, 15, 3, 15, 0, 0, ZoneOffset.UTC).toInstant().toEpochMilli()
+        val deferredFrom03 = CapsuleUnlockScheduler.applyQuietHours(earlyMorning, quietHoursEnabled = true, zoneId = zone)
+        val zdt03 = Instant.ofEpochMilli(deferredFrom03).atZone(zone)
+        assertEquals(15, zdt03.dayOfMonth)
+        assertEquals(8, zdt03.hour)
+        assertEquals(0, zdt03.minute)
+
+        // Daytime 14:45 -> unchanged
+        val daytime = ZonedDateTime.of(2026, 11, 15, 14, 45, 0, 0, ZoneOffset.UTC).toInstant().toEpochMilli()
+        assertEquals(daytime, CapsuleUnlockScheduler.applyQuietHours(daytime, quietHoursEnabled = true, zoneId = zone))
+
+        // Quiet hours disabled -> 23:30 unchanged
+        assertEquals(lateNight, CapsuleUnlockScheduler.applyQuietHours(lateNight, quietHoursEnabled = false, zoneId = zone))
+
+        // Anniversary calculation: 1 year after 2026-11-14 23:30 with quiet hours enabled -> 2027-11-15 08:00
+        val anniversaryMillis = CapsuleUnlockScheduler.computeAnniversaryTriggerMillis(
+            openedAtMillis = lateNight,
+            quietHoursEnabled = true,
+            zoneId = zone
+        )
+        val annivZdt = Instant.ofEpochMilli(anniversaryMillis).atZone(zone)
+        assertEquals(2027, annivZdt.year)
+        assertEquals(11, annivZdt.monthValue)
+        assertEquals(15, annivZdt.dayOfMonth)
+        assertEquals(8, annivZdt.hour)
+    }
+
+    @Test
+    fun `ApiConfig encrypts session_token with AES-GCM and transparently migrates plaintext token`() {
+        val keyGen = KeyGenerator.getInstance("AES")
+        keyGen.init(256)
+        val secretKey = keyGen.generateKey()
+
+        val rawPlainToken = "legacy_plain_bearer_token_12345"
+        val (migratedToken, needsMigration) = assertNotNull(
+            ApiConfig.decryptOrMigrateTokenWithKey(rawPlainToken, secretKey)
+        )
+        assertEquals(rawPlainToken, migratedToken)
+        assertTrue(needsMigration)
+
+        val encrypted = ApiConfig.encryptTokenWithKey(rawPlainToken, secretKey)
+        assertTrue(encrypted.startsWith(ApiConfig.ENCRYPTED_TOKEN_PREFIX))
+        assertFalse(encrypted.contains(rawPlainToken))
+
+        val (decryptedToken, needsMigrationAfter) = assertNotNull(
+            ApiConfig.decryptOrMigrateTokenWithKey(encrypted, secretKey)
+        )
+        assertEquals(rawPlainToken, decryptedToken)
+        assertFalse(needsMigrationAfter)
+    }
+
+    @Test
+    fun `LocationProvider rejects lastKnownLocation older than 2 minutes and cache cleanups remove stale files`() {
+        val now = 1_700_000_000_000L
+        assertTrue(LocationProvider.isLocationFresh(now - 60_000L, now))
+        assertTrue(LocationProvider.isLocationFresh(now - 120_000L, now))
+        assertFalse(LocationProvider.isLocationFresh(now - 120_001L, now))
+        assertFalse(LocationProvider.isLocationFresh(0L, now))
+
+        val tempDir = Files.createTempDirectory("tc_cache_test").toFile()
+        try {
+            val staleFile = File(tempDir, "old_photo.jpg").apply {
+                writeText("old")
+                setLastModified(now - MediaHelper.MAX_TEMP_FILE_AGE_MS - 5_000L)
+            }
+            val freshFile = File(tempDir, "new_photo.jpg").apply {
+                writeText("new")
+                setLastModified(now - 60_000L)
+            }
+            val removed = MediaHelper.cleanupStaleFilesInDir(tempDir, nowMillis = now)
+            assertEquals(1, removed)
+            assertFalse(staleFile.exists())
+            assertTrue(freshFile.exists())
+        } finally {
+            tempDir.deleteRecursively()
+        }
+
+        val apkDir = Files.createTempDirectory("tc_apk_test").toFile()
+        try {
+            val installedApk = File(apkDir, "timecapsule-update-v3.apk").apply { writeText("apk3") }
+            val futureApk = File(apkDir, "timecapsule-update-v4.apk").apply { writeText("apk4") }
+            val removedApks = AppUpdateManager.cleanupInstalledApksInDir(apkDir, currentVersionCode = 3)
+            assertEquals(1, removedApks)
+            assertFalse(installedApk.exists())
+            assertTrue(futureApk.exists())
+        } finally {
+            apkDir.deleteRecursively()
+        }
     }
 }
 
