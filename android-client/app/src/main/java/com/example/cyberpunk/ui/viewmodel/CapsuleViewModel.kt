@@ -1257,8 +1257,17 @@ class CapsuleViewModel(
             _snackbarEvents.tryEmit(appContext.getString(R.string.validation_create_error))
             return
         }
-        if (!UnlockDateTimeHelper.validateMinimumLead(form.unlockDateMillis)) {
+        val effectiveStages = listOf(DraftStageItem(form.unlockDateMillis, message)) + form.stages.drop(1)
+        if (effectiveStages.any { it.secretText.isBlank() }) {
+            _snackbarEvents.tryEmit(appContext.getString(R.string.validation_stage_empty_error))
+            return
+        }
+        if (effectiveStages.any { !UnlockDateTimeHelper.validateMinimumLead(it.unlockDateMillis) }) {
             _snackbarEvents.tryEmit(appContext.getString(R.string.validation_unlock_min_1min))
+            return
+        }
+        if (!UnlockDateTimeHelper.validateStagesChronologicalOrder(effectiveStages.map { it.unlockDateMillis })) {
+            _snackbarEvents.tryEmit(appContext.getString(R.string.validation_stage_order_error))
             return
         }
         _uiState.update { it.copy(showConfirmSealDialog = true) }
@@ -1327,10 +1336,28 @@ class CapsuleViewModel(
 
     fun addCreateStage() {
         _uiState.update { state ->
-            val nextDate = UnlockDateTimeHelper.defaultUnlockMillis(
-                daysAhead = 30L * (state.createForm.stages.size.toLong() + 1L)
+            val currentStages = if (state.createForm.stages.isEmpty()) {
+                listOf(
+                    DraftStageItem(
+                        unlockDateMillis = state.createForm.unlockDateMillis,
+                        secretText = state.createForm.messageText
+                    )
+                )
+            } else {
+                listOf(
+                    state.createForm.stages.first().copy(
+                        unlockDateMillis = state.createForm.unlockDateMillis,
+                        secretText = state.createForm.messageText.ifBlank { state.createForm.stages.first().secretText }
+                    )
+                ) + state.createForm.stages.drop(1)
+            }
+            if (currentStages.size >= 5) return@update state
+            val lastStageMillis = currentStages.lastOrNull()?.unlockDateMillis ?: state.createForm.unlockDateMillis
+            val nextDate = maxOf(
+                lastStageMillis + 7L * 86_400_000L,
+                UnlockDateTimeHelper.defaultUnlockMillis(daysAhead = 7L * (currentStages.size.toLong() + 1L))
             )
-            val list = state.createForm.stages + DraftStageItem(unlockDateMillis = nextDate, secretText = "")
+            val list = currentStages + DraftStageItem(unlockDateMillis = nextDate, secretText = "")
             state.copy(createForm = state.createForm.copy(stages = list))
         }
     }
@@ -1454,16 +1481,20 @@ class CapsuleViewModel(
             return
         }
 
-        val stages = if (form.isGeoLocked) {
-            form.stages.filter { it.secretText.isNotBlank() }.ifEmpty {
-                listOf(DraftStageItem(form.unlockDateMillis, message))
-            }
-        } else {
-            listOf(DraftStageItem(form.unlockDateMillis, message))
+        val stages = (listOf(DraftStageItem(form.unlockDateMillis, message)) + form.stages.drop(1)).take(5)
+
+        if (stages.any { it.secretText.isBlank() }) {
+            _snackbarEvents.tryEmit(appContext.getString(R.string.validation_stage_empty_error))
+            return
         }
 
         if (stages.any { !UnlockDateTimeHelper.validateMinimumLead(it.unlockDateMillis) }) {
             _snackbarEvents.tryEmit(appContext.getString(R.string.validation_unlock_min_1min))
+            return
+        }
+
+        if (!UnlockDateTimeHelper.validateStagesChronologicalOrder(stages.map { it.unlockDateMillis })) {
+            _snackbarEvents.tryEmit(appContext.getString(R.string.validation_stage_order_error))
             return
         }
 

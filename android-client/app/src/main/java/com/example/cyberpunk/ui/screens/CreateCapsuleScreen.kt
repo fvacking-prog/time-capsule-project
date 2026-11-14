@@ -1212,6 +1212,153 @@ fun CreateCapsuleScreen(
                         )
                     }
                 }
+
+                // Многоэтапные капсулы (этапы 2..5)
+                if (formState.stages.size > 1) {
+                    Text(
+                        text = stringResource(R.string.stages_count_hint, formState.stages.size),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = TokyoSecondary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    )
+                }
+
+                for (stageIndex in 1 until formState.stages.size) {
+                    val stage = formState.stages[stageIndex]
+                    val prevStageMillis = if (stageIndex == 1) {
+                        formState.unlockDateMillis
+                    } else {
+                        formState.stages[stageIndex - 1].unlockDateMillis
+                    }
+                    val isOutOfOrder = stage.unlockDateMillis < prevStageMillis
+                    val stageDateOnlyStr = runCatching {
+                        dateFormatter.format(Instant.ofEpochMilli(stage.unlockDateMillis)).substringBefore(" ")
+                    }.getOrDefault("")
+                    val stageTimeOnlyStr = runCatching {
+                        timeFormatter.format(Instant.ofEpochMilli(stage.unlockDateMillis))
+                    }.getOrDefault("00:00")
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(TokyoBackground.copy(alpha = 0.7f), RoundedCornerShape(14.dp))
+                            .border(
+                                width = 1.dp,
+                                color = if (isOutOfOrder) TokyoError.copy(alpha = 0.8f) else TokyoSecondary.copy(alpha = 0.35f),
+                                shape = RoundedCornerShape(14.dp)
+                            )
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Этап #${stageIndex + 1}",
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    color = TokyoSecondary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
+                            IconButton(
+                                onClick = { onRemoveStage(stageIndex) },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = stringResource(R.string.btn_delete_stage),
+                                    tint = TokyoError,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FilterChip(
+                                selected = true,
+                                onClick = { showDatePickerForStageIndex = stageIndex },
+                                label = { Text(stageDateOnlyStr) },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.CalendarMonth,
+                                        contentDescription = stringResource(R.string.btn_pick_unlock_date, stageDateOnlyStr),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = TokyoSecondary.copy(alpha = 0.18f),
+                                    selectedLabelColor = TokyoSecondary
+                                )
+                            )
+                            FilterChip(
+                                selected = true,
+                                onClick = { showTimePickerForStageIndex = stageIndex },
+                                label = { Text(stringResource(R.string.chip_custom_time, stageTimeOnlyStr)) },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.Schedule,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = TokyoAccent.copy(alpha = 0.18f),
+                                    selectedLabelColor = TokyoAccent
+                                )
+                            )
+                        }
+
+                        if (isOutOfOrder) {
+                            Text(
+                                text = stringResource(R.string.validation_stage_order_error),
+                                style = MaterialTheme.typography.bodySmall.copy(color = TokyoError)
+                            )
+                        }
+
+                        OutlinedTextField(
+                            value = stage.secretText,
+                            onValueChange = { onStageSecretChange(stageIndex, it) },
+                            label = { Text(stringResource(R.string.field_secret_text_label, stageIndex + 1)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            minLines = 2,
+                            maxLines = 5,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = TokyoOnBackground,
+                                unfocusedTextColor = TokyoOnBackground,
+                                focusedBorderColor = TokyoSecondary,
+                                unfocusedBorderColor = TokyoSecondary.copy(alpha = 0.35f)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+                }
+
+                if (formState.stages.size < 5) {
+                    OutlinedButton(
+                        onClick = onAddStage,
+                        modifier = Modifier.fillMaxWidth(),
+                        border = BorderStroke(1.dp, TokyoSecondary.copy(alpha = 0.5f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TokyoSecondary),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "${stringResource(R.string.btn_add_stage)} (${formState.stages.size}/5)",
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
             }
         }
 

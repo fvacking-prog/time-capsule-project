@@ -607,5 +607,32 @@ class UnlockAndConfigUnitTest {
         assertEquals(1.0f, calculateMaturationProgress(1000L, 3000L, 4000L), 1e-4f)
         assertFalse(calculateMaturationProgress(0L, 3000L, 2000L).isNaN())
     }
+
+    @Test
+    fun `UnlockDateTimeHelper validates multi-stage chronological order up to 5 stages`() {
+        val now = 1_700_000_000_000L
+        assertFalse(UnlockDateTimeHelper.validateStagesChronologicalOrder(emptyList(), now))
+        // Too many stages (>5)
+        assertFalse(
+            UnlockDateTimeHelper.validateStagesChronologicalOrder(
+                listOf(now + 120_000L, now + 240_000L, now + 360_000L, now + 480_000L, now + 600_000L, now + 720_000L),
+                now
+            )
+        )
+        // Valid 3 stages in ascending order
+        assertTrue(
+            UnlockDateTimeHelper.validateStagesChronologicalOrder(
+                listOf(now + 120_000L, now + 300_000L, now + 600_000L),
+                now
+            )
+        )
+        // Out of order (stage 2 < stage 1)
+        assertFalse(
+            UnlockDateTimeHelper.validateStagesChronologicalOrder(
+                listOf(now + 300_000L, now + 120_000L),
+                now
+            )
+        )
+    }
 }
 

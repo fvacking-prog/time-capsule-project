@@ -145,6 +145,9 @@
     <string name="btn_pick_unlock_date">Дата открытия: %1$s</string>
     <string name="field_secret_text_label">Секретное послание этапа #%1$d</string>
     <string name="btn_delete_stage">Удалить этап</string>
+    <string name="validation_stage_order_error">Дата каждого следующего этапа должна быть не раньше предыдущего</string>
+    <string name="validation_stage_empty_error">Заполните секретное послание для всех этапов капсулы</string>
+    <string name="stages_count_hint">Этапов: %1$d из 5 (открываются по очереди в свои даты)</string>
     <string name="btn_submit_create_capsule">Создать капсулу времени</string>
     <string name="validation_create_error">Заполните название, получите координаты и добавьте хотя бы один этап с текстом</string>
     <string name="create_capsule_success">Капсула «%1$s» успешно создана!</string>

@@ -70,6 +70,18 @@ object UnlockDateTimeHelper {
         nowMillis: Long = System.currentTimeMillis()
     ): Boolean = targetMillis >= nowMillis + MIN_LEAD_MILLIS
 
+    fun validateStagesChronologicalOrder(
+        stageUnlockDates: List<Long>,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Boolean {
+        if (stageUnlockDates.isEmpty() || stageUnlockDates.size > 5) return false
+        if (stageUnlockDates.any { !validateMinimumLead(it, nowMillis) }) return false
+        for (i in 1 until stageUnlockDates.size) {
+            if (stageUnlockDates[i] < stageUnlockDates[i - 1]) return false
+        }
+        return true
+    }
+
     fun chipDateMillis(
         chipKey: String,
         existingMillis: Long,
