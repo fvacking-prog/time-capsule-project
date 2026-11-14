@@ -298,6 +298,10 @@ internal suspend inline fun <reified T> ApplicationCall.receiveJsonWithLimit(
 }
 
 fun Route.capsuleRoutes() {
+    get("/ping") {
+        call.respondText("ok", status = io.ktor.http.HttpStatusCode.OK)
+    }
+
     get("/health") {
         if (healthCheckFn()) {
             call.respondText("ok", status = io.ktor.http.HttpStatusCode.OK)
@@ -875,6 +879,31 @@ internal data class VerifiedGoogleProfile(
 private val googleTransport = NetHttpTransport()
 private val googleJsonFactory = GsonFactory.getDefaultInstance()
 
+@Volatile
+private var cachedGoogleVerifierClientId: String? = null
+@Volatile
+private var cachedGoogleVerifier: GoogleIdTokenVerifier? = null
+
+internal fun getOrCreateGoogleIdTokenVerifier(webClientId: String): GoogleIdTokenVerifier {
+    val existing = cachedGoogleVerifier
+    if (existing != null && cachedGoogleVerifierClientId == webClientId) {
+        return existing
+    }
+    synchronized(googleTransport) {
+        val recheck = cachedGoogleVerifier
+        if (recheck != null && cachedGoogleVerifierClientId == webClientId) {
+            return recheck
+        }
+        val verifier = GoogleIdTokenVerifier.Builder(googleTransport, googleJsonFactory)
+            .setAudience(listOf(webClientId))
+            .setIssuers(listOf("https://accounts.google.com", "accounts.google.com"))
+            .build()
+        cachedGoogleVerifierClientId = webClientId
+        cachedGoogleVerifier = verifier
+        return verifier
+    }
+}
+
 internal var googleTokenVerifierFn: (String) -> VerifiedGoogleProfile = ::verifyGoogleIdToken
 
 internal fun verifyGoogleIdToken(idTokenString: String): VerifiedGoogleProfile {
@@ -885,10 +914,7 @@ internal fun verifyGoogleIdToken(idTokenString: String): VerifiedGoogleProfile {
         throw UnauthorizedException("GOOGLE_WEB_CLIENT_ID is not configured on the server")
     }
 
-    val verifier = GoogleIdTokenVerifier.Builder(googleTransport, googleJsonFactory)
-        .setAudience(listOf(webClientId))
-        .setIssuers(listOf("https://accounts.google.com", "accounts.google.com"))
-        .build()
+    val verifier = getOrCreateGoogleIdTokenVerifier(webClientId)
 
     val googleIdToken = runCatching { verifier.verify(idTokenString) }.getOrNull()
         ?: throw UnauthorizedException("Invalid or expired Google ID token")
@@ -1040,7 +1066,7 @@ internal fun updateUserHandle(userId: String, rawHandle: String): UserDto {
                 .where { (Users.handle eq normalized) and (Users.id neq userId) }
                 .count() > 0L
             if (takenByOther) {
-                throw ConflictException("Никнейм @$normalized уже занят")
+                throw ConflictException("Этот @ник уже занят")
             }
 
             val updatedCount = Users.update({ Users.id eq userId }) {
@@ -1057,9 +1083,9 @@ internal fun updateUserHandle(userId: String, rawHandle: String): UserDto {
         }
     } catch (e: ConflictException) {
         throw e
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
         if (HandleUtils.isUniqueConstraintViolation(e)) {
-            throw ConflictException("Никнейм @$normalized уже занят")
+            throw ConflictException("Этот @ник уже занят")
         }
         throw e
     }

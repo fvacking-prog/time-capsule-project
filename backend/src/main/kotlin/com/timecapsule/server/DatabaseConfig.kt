@@ -128,10 +128,10 @@ object DatabaseConfig {
                 password = spec.password
             }
             maximumPoolSize = MAX_POOL_SIZE
-            minimumIdle = 1
+            minimumIdle = 0
             connectionTimeout = CONNECTION_TIMEOUT_MS
             validationTimeout = 5_000L
-            idleTimeout = 300_000L
+            idleTimeout = 60_000L
             maxLifetime = 1_800_000L
             connectionTestQuery = "SELECT 1"
             poolName = if (spec.isPostgres) "TimeCapsulePostgresPool" else "TimeCapsuleH2Pool"

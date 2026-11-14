@@ -1170,6 +1170,7 @@ class BackendUnitTests {
             setBody("""{"handle":"alice_99"}""")
         }
         assertEquals(HttpStatusCode.Conflict, conflictPut.status)
+        assertEquals("Этот @ник уже занят", conflictPut.bodyAsText())
 
         // Гонка (concurrent race condition): 2 пользователя одновременно пытаются занять один и тот же handle
         val raceUsers = (1..2).map { idx ->
@@ -1680,6 +1681,8 @@ class BackendUnitTests {
 
         val hikariConfig = DatabaseConfig.buildHikariConfig(spec)
         assertEquals(3, hikariConfig.maximumPoolSize)
+        assertEquals(0, hikariConfig.minimumIdle)
+        assertEquals(60_000L, hikariConfig.idleTimeout)
         assertEquals(10_000L, hikariConfig.connectionTimeout)
 
         val h2Fallback = DatabaseConfig.resolveConnectionSpec(databaseUrlEnv = "  ", h2UrlEnv = null)
@@ -1707,6 +1710,10 @@ class BackendUnitTests {
                 routing { capsuleRoutes() }
             }
 
+            val pingResp = client.get("/ping")
+            assertEquals(HttpStatusCode.OK, pingResp.status)
+            assertEquals("ok", pingResp.bodyAsText())
+
             val healthyResp = client.get("/health")
             assertEquals(HttpStatusCode.OK, healthyResp.status)
             assertEquals("ok", healthyResp.bodyAsText())
@@ -1714,12 +1721,22 @@ class BackendUnitTests {
             val prevHealthFn = healthCheckFn
             healthCheckFn = { false }
             try {
+                // /ping remains 200 ok even when DB is down (does not query DB)
+                val pingWhenDown = client.get("/ping")
+                assertEquals(HttpStatusCode.OK, pingWhenDown.status)
+                assertEquals("ok", pingWhenDown.bodyAsText())
+
                 val downResp = client.get("/health")
                 assertEquals(HttpStatusCode.ServiceUnavailable, downResp.status)
                 assertEquals("database_unavailable", downResp.bodyAsText())
             } finally {
                 healthCheckFn = prevHealthFn
             }
+
+            // GoogleIdTokenVerifier is cached as a singleton per webClientId
+            val v1 = getOrCreateGoogleIdTokenVerifier("client-1.apps.googleusercontent.com")
+            val v2 = getOrCreateGoogleIdTokenVerifier("client-1.apps.googleusercontent.com")
+            assertTrue(v1 === v2)
         } finally {
             DatabaseConfig.closePool()
             assertTrue(pool.isClosed)

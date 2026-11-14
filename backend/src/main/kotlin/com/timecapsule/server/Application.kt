@@ -12,9 +12,12 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.BadRequestException
 import io.ktor.server.plugins.NotFoundException
+import io.ktor.server.plugins.calllogging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.cors.routing.CORS
 import io.ktor.server.plugins.statuspages.StatusPages
+import io.ktor.server.request.httpMethod
+import io.ktor.server.request.path
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.routing
 import kotlinx.serialization.SerializationException
@@ -23,6 +26,7 @@ import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.isNull
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.lessEq
 import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -33,9 +37,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import org.jetbrains.exposed.sql.SqlExpressionBuilder.less
 import org.jetbrains.exposed.sql.deleteWhere
 import org.slf4j.LoggerFactory
+import org.slf4j.event.Level
 import kotlin.system.exitProcess
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier
 import com.google.api.client.http.javanet.NetHttpTransport
@@ -121,16 +125,27 @@ fun Application.module() {
         throw DatabaseUnavailableException(msg, e)
     }
 
-    // Фоновая периодическая очистка просроченных сессий раз в 60 секунд
+    // Очистка просроченных сессий при старте и раз в 6 часов
+    try {
+        purgeExpiredSessions()
+    } catch (_: Exception) {}
+
     launch(Dispatchers.IO) {
         while (isActive) {
-            delay(60_000L)
+            delay(SESSION_CLEANUP_INTERVAL_MS)
             try {
-                transaction {
-                    val now = System.currentTimeMillis()
-                    Sessions.deleteWhere { Sessions.expiresAt less now }
-                }
+                purgeExpiredSessions()
             } catch (_: Exception) {}
+        }
+    }
+
+    install(CallLogging) {
+        level = Level.INFO
+        format { call ->
+            val status = call.response.status()?.value ?: 0
+            val method = call.request.httpMethod.value
+            val path = call.request.path()
+            "$method $path -> $status"
         }
     }
 
@@ -249,12 +264,22 @@ fun Application.installSerializationAndErrors() {
                 status = HttpStatusCode.NotFound
             )
         }
-        exception<Throwable> { call, _ ->
+        exception<Throwable> { call, cause ->
+            LoggerFactory.getLogger("StatusPages")
+                .error("Unhandled error on ${call.request.httpMethod.value} ${call.request.path()}", cause)
             call.respondText(
                 text = "Internal server error",
                 status = HttpStatusCode.InternalServerError
             )
         }
+    }
+}
+
+internal const val SESSION_CLEANUP_INTERVAL_MS = 6L * 60L * 60L * 1000L // 6 hours
+
+fun purgeExpiredSessions(now: Long = System.currentTimeMillis()): Int {
+    return transaction {
+        Sessions.deleteWhere { Sessions.expiresAt lessEq now }
     }
 }
 

@@ -134,4 +134,10 @@
    - Формат шифротекста `[12 байт IV][GCM ciphertext + 16 байт tag]` не изменён: любые существующие записи в БД читаются напрямую.
    - При возникновении `AEADBadTagException` во время расшифровки (`decryptBytes`) и наличии `CAPSULE_AES_KEY_PREVIOUS` автоматически выполняется повторная попытка расшифровки предыдущим ключом.
    - В `GeoUtils.stageText` ошибка расшифровки повреждённой записи логируется предупреждением (только тип исключения, без секретов и данных) и возвращает заглушку `CORRUPTED_DATA_PLACEHOLDER`, не роняя выдачу всего списка капсул.
+9. **R1.9 (Аудит 16, 20, 28, 31, 34, 35 + `/ping`): Оптимизация пула БД, кеширование верификатора, логирование и Docker**:
+   - `GoogleIdTokenVerifier` и `NetHttpTransport` кешируются как потокобезопасные синглтоны по `webClientId` (`getOrCreateGoogleIdTokenVerifier`).
+   - В `DatabaseConfig.buildHikariConfig` установлены `minimumIdle = 0` и `idleTimeout = 60_000L`, а фоновая очистка сессий (`purgeExpiredSessions`) переведена на запуск при старте и раз в 6 часов, чтобы серверная БД Neon Free могла переходить в спящий режим при простое.
+   - При конфликте уникальности `@handle` в `updateUserHandle` возвращается `409 Conflict` с текстом `"Этот @ник уже занят"`.
+   - Подключён плагин `CallLogging` (логирует только метод, путь и HTTP-статус без заголовков и тел) и логирование стектрейса необработанных ошибок в `StatusPages` (`exception<Throwable>`).
+   - Добавлен легковесный публичный `GET /ping` (`"ok"` без обращения к БД), а `/health` сохранён с проверкой соединения БД. Корневой `Dockerfile` унифицирован с `backend/Dockerfile` (`eclipse-temurin:21-jre-jammy`, непривилегированный `appuser`, `HEALTHCHECK`, `-XX:MaxRAMPercentage=75.0`).
 
