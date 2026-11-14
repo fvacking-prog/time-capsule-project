@@ -23,6 +23,7 @@ import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.isNull
+import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
@@ -254,10 +255,10 @@ fun migrateDatabase() {
     transaction {
         SchemaUtils.createMissingTablesAndColumns(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks, CapsuleMedia)
 
-        // Migrating existing capsules created before invite_code was introduced
+        // Migrating existing group capsules created before invite_code was introduced
         val capsulesWithoutCode = Capsules
             .selectAll()
-            .where { Capsules.inviteCode.isNull() }
+            .where { Capsules.inviteCode.isNull() and (Capsules.isGroupCapsule eq true) }
             .toList()
 
         for (row in capsulesWithoutCode) {

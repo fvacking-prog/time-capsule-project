@@ -299,6 +299,7 @@ class BackendUnitTests {
 
             Users.insert { it[id] = "user_a"; it[username] = "UserA" }
             Users.insert { it[id] = "user_b"; it[username] = "UserB" }
+            Users.insert { it[id] = "user_c"; it[username] = "UserC" }
 
             val capId = "cap_j1"
             Capsules.insert {
@@ -309,11 +310,28 @@ class BackendUnitTests {
                 it[longitude] = 69.6221
                 it[radiusMeters] = 50.0
                 it[createdAt] = System.currentTimeMillis()
-                it[isGroupCapsule] = false
+                it[isGroupCapsule] = true
                 it[inviteCode] = "ABC789"
             }
             CapsuleParticipants.insert {
                 it[CapsuleParticipants.capsuleId] = capId
+                it[userId] = "user_a"
+            }
+
+            val personalCapId = "cap_pers_no_join"
+            Capsules.insert {
+                it[id] = personalCapId
+                it[creatorId] = "user_a"
+                it[title] = "Personal Capsule"
+                it[latitude] = 40.2825
+                it[longitude] = 69.6221
+                it[radiusMeters] = 50.0
+                it[createdAt] = System.currentTimeMillis()
+                it[isGroupCapsule] = false
+                it[inviteCode] = "PERS99"
+            }
+            CapsuleParticipants.insert {
+                it[CapsuleParticipants.capsuleId] = personalCapId
                 it[userId] = "user_a"
             }
 
@@ -336,13 +354,28 @@ class BackendUnitTests {
             assertEquals(capId, rejoinedDto.id)
             assertEquals(2, CapsuleParticipants.selectAll().where { CapsuleParticipants.capsuleId eq capId }.count())
 
-            // 3. Invalid code -> CapsuleNotFoundException (which statusPages maps to 404)
+            // 3. Joining a personal capsule is forbidden (403 ForbiddenException)
+            assertFailsWith<ForbiddenException> {
+                joinCapsuleByInviteCode("PERS99", "user_b")
+            }
+
+            // 4. Bidirectional block check: if creator user_a blocks user_c, user_c cannot join
+            Blocks.insert {
+                it[blockerId] = "user_a"
+                it[blockedUserId] = "user_c"
+                it[createdAt] = System.currentTimeMillis()
+            }
+            assertFailsWith<CapsuleNotFoundException> {
+                joinCapsuleByInviteCode("ABC789", "user_c")
+            }
+
+            // 5. Invalid code -> CapsuleNotFoundException (which statusPages maps to 404)
             val notFoundEx = assertFailsWith<CapsuleNotFoundException> {
                 joinCapsuleByInviteCode("INVALID", "user_b")
             }
             assertTrue(notFoundEx.message?.contains("не найдена") == true || notFoundEx.message?.contains("INVALID") == true)
 
-            // 4. Blank code -> CapsuleNotFoundException
+            // 6. Blank code -> CapsuleNotFoundException
             assertFailsWith<CapsuleNotFoundException> {
                 joinCapsuleByInviteCode("   ", "user_b")
             }

@@ -78,11 +78,25 @@ internal fun isUserBlockedBy(blockerId: String, blockedUserId: String): Boolean 
         .count() > 0L
 }
 
+internal fun isEitherUserBlocked(userA: String, userB: String): Boolean {
+    if (userA == userB) return false
+    return Blocks
+        .selectAll()
+        .where {
+            ((Blocks.blockerId eq userA) and (Blocks.blockedUserId eq userB)) or
+                ((Blocks.blockerId eq userB) and (Blocks.blockedUserId eq userA))
+        }
+        .count() > 0L
+}
+
 internal fun getBlockedUserIdsFor(blockerId: String): Set<String> {
     return Blocks
         .selectAll()
-        .where { Blocks.blockerId eq blockerId }
-        .map { it[Blocks.blockedUserId] }
+        .where { (Blocks.blockerId eq blockerId) or (Blocks.blockedUserId eq blockerId) }
+        .map {
+            val b1 = it[Blocks.blockerId]
+            if (b1 == blockerId) it[Blocks.blockedUserId] else b1
+        }
         .toSet()
 }
 
@@ -96,7 +110,7 @@ fun canUserAccessCapsule(capsuleId: String, userId: String): Boolean {
     val creatorId = capsuleRow[Capsules.creatorId]
     if (creatorId == userId) return true
 
-    if (isUserBlockedBy(blockerId = userId, blockedUserId = creatorId)) {
+    if (isEitherUserBlocked(userId, creatorId)) {
         return false
     }
 
@@ -112,15 +126,22 @@ fun getVisibleCapsuleIds(userId: String): List<String> {
         .select(CapsuleParticipants.capsuleId)
         .where { CapsuleParticipants.userId eq userId }
 
-    val blockedCreatorsSubQuery = Blocks
+    val blockedByMeSubQuery = Blocks
         .select(Blocks.blockedUserId)
         .where { Blocks.blockerId eq userId }
+
+    val blockedMeSubQuery = Blocks
+        .select(Blocks.blockerId)
+        .where { Blocks.blockedUserId eq userId }
 
     return Capsules
         .select(Capsules.id)
         .where {
             ((Capsules.creatorId eq userId) or (Capsules.id inSubQuery participantCapsulesSubQuery)) and
-                ((Capsules.creatorId eq userId) or (Capsules.creatorId notInSubQuery blockedCreatorsSubQuery))
+                (
+                    (Capsules.creatorId eq userId) or
+                        ((Capsules.creatorId notInSubQuery blockedByMeSubQuery) and (Capsules.creatorId notInSubQuery blockedMeSubQuery))
+                )
         }
         .map { it[Capsules.id] }
 }
@@ -130,23 +151,23 @@ fun joinCapsuleByInviteCode(
     userId: String,
     now: Long = System.currentTimeMillis()
 ): CapsuleDto {
-    val cleanCode = rawInviteCode.trim()
+    val cleanCode = rawInviteCode.trim().uppercase()
     if (cleanCode.isEmpty()) {
         throw CapsuleNotFoundException("Код приглашения не может быть пустым")
     }
 
-    val upperCode = cleanCode.uppercase()
     val capsuleRow = Capsules
         .selectAll()
-        .where { Capsules.inviteCode eq upperCode }
+        .where { Capsules.inviteCode eq cleanCode }
         .singleOrNull()
-        ?: Capsules.selectAll().where { Capsules.inviteCode.isNotNull() }.firstOrNull {
-            it[Capsules.inviteCode]?.trim()?.equals(cleanCode, ignoreCase = true) == true
-        }
         ?: throw CapsuleNotFoundException("Капсула с кодом приглашения '$cleanCode' не найдена")
 
+    if (!capsuleRow[Capsules.isGroupCapsule]) {
+        throw ForbiddenException("Присоединение по коду приглашения доступно только для групповых капсул")
+    }
+
     val creatorId = capsuleRow[Capsules.creatorId]
-    if (creatorId != userId && isUserBlockedBy(blockerId = userId, blockedUserId = creatorId)) {
+    if (creatorId != userId && isEitherUserBlocked(userId, creatorId)) {
         throw CapsuleNotFoundException("Капсула с кодом приглашения '$cleanCode' не найдена")
     }
 
@@ -166,9 +187,6 @@ fun joinCapsuleByInviteCode(
             it[CapsuleParticipants.openedAt] = null
             it[CapsuleParticipants.archived] = false
             it[CapsuleParticipants.role] = "MEMBER"
-        }
-        Capsules.update({ Capsules.id eq capsuleId }) {
-            it[isGroupCapsule] = true
         }
     }
 
@@ -481,15 +499,15 @@ fun Route.capsuleRoutes() {
                 }
 
                 if (targetRecipientIds.isNotEmpty()) {
-                    val hasBlockedSender = Blocks
+                    val hasBlockRelation = Blocks
                         .selectAll()
                         .where {
-                            (Blocks.blockerId inList targetRecipientIds) and
-                                (Blocks.blockedUserId eq authenticatedUserId)
+                            ((Blocks.blockerId inList targetRecipientIds) and (Blocks.blockedUserId eq authenticatedUserId)) or
+                                ((Blocks.blockerId eq authenticatedUserId) and (Blocks.blockedUserId inList targetRecipientIds))
                         }
                         .count() > 0L
-                    if (hasBlockedSender) {
-                        throw ForbiddenException("Невозможно отправить капсулу: получатель заблокировал вас")
+                    if (hasBlockRelation) {
+                        throw ForbiddenException("Невозможно отправить капсулу из-за активной блокировки между пользователями")
                     }
 
                     val dayAgo = now - ONE_DAY_MILLIS
@@ -509,8 +527,9 @@ fun Route.capsuleRoutes() {
                     }
                 }
 
-                val generatedInviteCode = generateUniqueInviteCode()
                 val isGeo = request.isGeoLocked
+                val isGroup = if (isGeo) (request.isGroupCapsule || targetRecipientIds.isNotEmpty()) else false
+                val generatedInviteCode = if (isGroup) generateUniqueInviteCode() else null
                 val finalKind = if (request.kind.isNotBlank()) request.kind.uppercase() else "MESSAGE"
                 val cleanTags = request.tags.map { it.trim().removePrefix("#") }.filter { it.isNotEmpty() }.take(5)
                 val derivedRecipientLabel = request.recipient?.trim()?.takeIf { it.isNotEmpty() }
@@ -532,7 +551,7 @@ fun Route.capsuleRoutes() {
                     it[longitude] = if (isGeo) request.longitude else 0.0
                     it[radiusMeters] = if (isGeo) request.radiusMeters else 50.0
                     it[createdAt] = now
-                    it[isGroupCapsule] = if (isGeo) (request.isGroupCapsule || targetRecipientIds.isNotEmpty()) else false
+                    it[isGroupCapsule] = isGroup
                     it[inviteCode] = generatedInviteCode
                     it[kind] = finalKind
                     it[recipient] = derivedRecipientLabel

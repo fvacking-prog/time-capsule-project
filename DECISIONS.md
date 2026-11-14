@@ -116,4 +116,8 @@
    - Статус `READY`, проверка `POST /api/v1/capsules/{id}/open`, доступ к медиа и клиентские проверки открытия (Радар, Полка капсул, Таймлайн, Главная, `CapsuleViewModel`) переведены на `hasUnlockedStage`.
 3. **R1.3 (Аудит 5): Полное удаление записи `Users` и медиа при `DELETE /api/v1/me/data`**:
    - В транзакции `DELETE /api/v1/me/data` после каскадного удаления медиа (`CapsuleMedia`), этапов (`CapsuleStages`), участий (`CapsuleParticipants`), капсул (`Capsules`), блокировок (`Blocks`) и сессий (`Sessions`) добавлено удаление самой строки пользователя `Users.deleteWhere { id eq authenticatedUserId }`.
+4. **R1.4 (Аудит 6): Коды приглашения только для групповых капсул, запрет `join` в личные (`403`) и двусторонние блокировки**:
+   - Генерация `inviteCode` при создании капсулы и при миграции `migrateDatabase()` выполняется только для групповых капсул (`isGroupCapsule == true`), для личных капсул `inviteCode = null`.
+   - В `joinCapsuleByInviteCode` поиск выполняется строго по `Capsules.inviteCode eq rawInviteCode.trim().uppercase()` без полного сканирования `selectAll()`. При попытке присоединиться к личной капсуле (`!isGroupCapsule`) выбрасывается `ForbiddenException` (`403 Forbidden`).
+   - Проверка блокировок (`isEitherUserBlocked`) переведена в двусторонний режим (блокировка в любую сторону запрещает `join`, доступ к капсуле, видимость в списке и отправку новых капсул).
 
