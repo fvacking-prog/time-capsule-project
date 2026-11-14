@@ -77,6 +77,7 @@ import com.example.cyberpunk.ui.screens.SettingsScreen
 import com.example.cyberpunk.ui.theme.TimeCapsuleTheme
 import com.example.cyberpunk.ui.theme.TokyoAccent
 import com.example.cyberpunk.ui.theme.TokyoBackground
+import com.example.cyberpunk.data.CapsuleUnlockScheduler
 import com.example.cyberpunk.ui.theme.TokyoOnSurface
 import com.example.cyberpunk.ui.theme.TokyoPrimary
 import com.example.cyberpunk.ui.theme.TokyoSurface
@@ -97,11 +98,26 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleNotificationIntent(intent)
         enableEdgeToEdge()
         setContent {
             TimeCapsuleTheme {
                 TimeCapsuleApp(capsuleViewModel)
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleNotificationIntent(intent)
+    }
+
+    private fun handleNotificationIntent(intent: Intent?) {
+        val targetCapsuleId = intent?.getStringExtra(CapsuleUnlockScheduler.EXTRA_CAPSULE_ID)
+        if (!targetCapsuleId.isNullOrBlank()) {
+            capsuleViewModel.setPendingDeepLinkCapsuleId(targetCapsuleId)
+            intent.removeExtra(CapsuleUnlockScheduler.EXTRA_CAPSULE_ID)
         }
     }
 
@@ -278,6 +294,31 @@ fun TimeCapsuleApp(
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: ROUTE_HOME
+
+    LaunchedEffect(
+        uiState.pendingDeepLinkCapsuleId,
+        uiState.isAuthInitialized,
+        uiState.isAuthenticated,
+        uiState.currentUser?.handle,
+        uiState.isPinSet,
+        uiState.isPinUnlocked,
+        uiState.isLoading
+    ) {
+        val pendingId = uiState.pendingDeepLinkCapsuleId
+        if (!pendingId.isNullOrBlank() &&
+            uiState.isAuthInitialized &&
+            uiState.isAuthenticated &&
+            !uiState.currentUser?.handle.isNullOrBlank() &&
+            (!uiState.isPinSet || uiState.isPinUnlocked) &&
+            !uiState.isLoading
+        ) {
+            capsuleViewModel.consumePendingDeepLinkCapsule {
+                navController.navigate(ROUTE_TIMELINE) {
+                    launchSingleTop = true
+                }
+            }
+        }
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -567,6 +608,8 @@ fun TimeCapsuleApp(
                     onStageDateChange = capsuleViewModel::updateCreateStageDate,
                     onStageTimeChange = capsuleViewModel::updateCreateStageTime,
                     onStageSecretChange = capsuleViewModel::updateCreateStageSecret,
+                    shouldPromptNotificationOnSeal = !uiState.hasPromptedNotificationOnSeal || uiState.myCapsules.isEmpty(),
+                    onNotificationPrompted = capsuleViewModel::markNotificationPromptedOnSeal,
                     onOpenConfirmDialog = capsuleViewModel::openConfirmSealDialog,
                     onDismissConfirmDialog = capsuleViewModel::dismissConfirmSealDialog,
                     onSubmit = {
@@ -606,6 +649,7 @@ fun TimeCapsuleApp(
                     onOpenSetPinDialog = capsuleViewModel::openSetPinDialog,
                     onRemovePin = capsuleViewModel::removePin,
                     onToggleNotifications = capsuleViewModel::toggleNotifications,
+                    onToggleQuietHours = capsuleViewModel::toggleQuietHours,
                     onExportData = { capsuleViewModel.exportData(context) },
                     onOpenDeleteDataDialog = capsuleViewModel::openConfirmDeleteDataDialog,
                     onDismissDeleteDataDialog = capsuleViewModel::dismissConfirmDeleteDataDialog,

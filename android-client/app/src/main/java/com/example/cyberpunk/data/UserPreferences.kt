@@ -17,6 +17,8 @@ object UserPreferences {
     private val PIN_HASH_KEY = stringPreferencesKey("pin_hash")
     private val PIN_SALT_KEY = stringPreferencesKey("pin_salt")
     private val NOTIFICATIONS_ENABLED_KEY = booleanPreferencesKey("notifications_enabled")
+    private val QUIET_HOURS_ENABLED_KEY = booleanPreferencesKey("quiet_hours_enabled")
+    private val FIRST_SEAL_NOTIF_PROMPTED_KEY = booleanPreferencesKey("first_seal_notif_prompted")
 
     fun hasPinFlow(context: Context): Flow<Boolean> {
         return context.dataStore.data.map { prefs ->
@@ -30,9 +32,33 @@ object UserPreferences {
         }
     }
 
+    fun isQuietHoursEnabledFlow(context: Context): Flow<Boolean> {
+        return context.dataStore.data.map { prefs ->
+            prefs[QUIET_HOURS_ENABLED_KEY] ?: false
+        }
+    }
+
+    fun hasPromptedNotificationOnSealFlow(context: Context): Flow<Boolean> {
+        return context.dataStore.data.map { prefs ->
+            prefs[FIRST_SEAL_NOTIF_PROMPTED_KEY] ?: false
+        }
+    }
+
     suspend fun setNotificationsEnabled(context: Context, enabled: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[NOTIFICATIONS_ENABLED_KEY] = enabled
+        }
+    }
+
+    suspend fun setQuietHoursEnabled(context: Context, enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[QUIET_HOURS_ENABLED_KEY] = enabled
+        }
+    }
+
+    suspend fun setPromptedNotificationOnSeal(context: Context) {
+        context.dataStore.edit { prefs ->
+            prefs[FIRST_SEAL_NOTIF_PROMPTED_KEY] = true
         }
     }
 

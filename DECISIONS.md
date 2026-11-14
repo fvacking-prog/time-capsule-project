@@ -146,4 +146,12 @@
     - В `signInWithGoogle` удалён дублирующийся вызов `remoteRepository.authGoogle` в блоке `catch`.
     - На полке капсул (`CapsulesShelfScreen.kt`) чип кода приглашения отображается только для групповых капсул (`capsule.isGroupCapsule`).
     - В `IdeasScreen.kt` разблокированы шаблоны `photo_archive` (`kind = "PHOTO"`) и `voice_2026` (`kind = "VOICE"`), удалён мёртвый экран `MyCapsulesScreen.kt` (`ROUTE_MY_CAPSULES`) и неиспользуемые методы в `CapsuleViewModel`.
+11. **R2.1 (Аудит 3 и Функция 2): Локальные уведомления 2.0 (`AlarmManager`, `BootCompletedReceiver`, 3 канала, тихие часы, годовщина, `EXTRA_CAPSULE_ID`)**:
+    - Запрос runtime-разрешения `POST_NOTIFICATIONS` (API 33+) выполняется при включении тумблера уведомлений в `SettingsScreen` и перед запечатыванием первой капсулы в `CreateCapsuleScreen`.
+    - Создаются 3 канала уведомлений: `capsule_unlock` (личные капсулы), `capsule_social` (входящие и групповые капсулы), `capsule_anniversary` (годовщина открытия через 1 год).
+    - Уведомления о наступлении времени открытия планируются через `AlarmManager`: при `canScheduleExactAlarms() == true` (или API < 31) используется `setExactAndAllowWhileIdle`, иначе — безопасный fallback на `setWindow` (~10 минут) без запроса специального разрешения `SCHEDULE_EXACT_ALARM`.
+    - Планы уведомлений сериализуются в `SharedPreferences("capsule_unlock_plans_prefs")` и автоматически перерегистрируются при перезагрузке или обновлении приложения через `BootCompletedReceiver` (`BOOT_COMPLETED`, `MY_PACKAGE_REPLACED`).
+    - Уведомление о годовщине (ровно через 1 год после открытия капсулы) планируется через `WorkManager` (`CapsuleAnniversaryWorker`).
+    - Реализован режим «Тихие часы (23:00–08:00)» (по умолчанию выключен): уведомления, попадающие в интервал 23:00–08:00, переносятся на 08:00 утра.
+    - В `MainActivity` (`onCreate` и `onNewIntent`) обрабатывается `EXTRA_CAPSULE_ID`: целевой ID сохраняется в `CapsuleViewModel`, ожидает завершения авторизации и разблокировки PIN, при необходимости подгружает список капсул с сервера и открывает экран таймлайна (либо показывает понятное сообщение в Snackbar, если капсула удалена или недоступна).
 

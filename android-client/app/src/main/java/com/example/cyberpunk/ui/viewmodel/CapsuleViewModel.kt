@@ -145,6 +145,9 @@ data class CapsuleUiState(
     val showSetPinDialog: Boolean = false,
     val pinError: String? = null,
     val isNotificationsEnabled: Boolean = true,
+    val isQuietHoursEnabled: Boolean = false,
+    val hasPromptedNotificationOnSeal: Boolean = false,
+    val pendingDeepLinkCapsuleId: String? = null,
     val showConfirmSealDialog: Boolean = false,
     val showConfirmDeleteDataDialog: Boolean = false,
     val showAboutDialog: Boolean = false,
@@ -233,17 +236,22 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         ApiConfig.init(appContext)
+        CapsuleUnlockScheduler.ensureChannels(appContext)
         _uiState.update { it.copy(settingsUrlInput = ApiConfig.BASE_URL) }
         checkForUpdates(manual = false)
 
         viewModelScope.launch {
             val hasPin = UserPreferences.hasPinFlow(appContext).first()
             val notif = UserPreferences.isNotificationsEnabledFlow(appContext).first()
+            val quietHours = UserPreferences.isQuietHoursEnabledFlow(appContext).first()
+            val promptedOnSeal = UserPreferences.hasPromptedNotificationOnSealFlow(appContext).first()
             _uiState.update {
                 it.copy(
                     isPinSet = hasPin,
                     isPinUnlocked = !hasPin,
-                    isNotificationsEnabled = notif
+                    isNotificationsEnabled = notif,
+                    isQuietHoursEnabled = quietHours,
+                    hasPromptedNotificationOnSeal = promptedOnSeal
                 )
             }
         }
@@ -900,7 +908,57 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
     // --- Capsule Actions: Open, Archive, Unarchive, Block ---
     private fun syncUnlockNotifications() {
         val state = _uiState.value
-        CapsuleUnlockScheduler.sync(appContext, state.capsules, state.isNotificationsEnabled)
+        CapsuleUnlockScheduler.sync(
+            context = appContext,
+            capsules = state.capsules,
+            notificationsEnabled = state.isNotificationsEnabled,
+            quietHoursEnabled = state.isQuietHoursEnabled
+        )
+    }
+
+    fun setPendingDeepLinkCapsuleId(capsuleId: String?) {
+        val cleaned = capsuleId?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        _uiState.update { it.copy(pendingDeepLinkCapsuleId = cleaned) }
+    }
+
+    fun consumePendingDeepLinkCapsule(onNavigateToTimeline: () -> Unit) {
+        val targetId = _uiState.value.pendingDeepLinkCapsuleId ?: return
+        _uiState.update { it.copy(pendingDeepLinkCapsuleId = null) }
+
+        viewModelScope.launch {
+            try {
+                var targetCapsule = _uiState.value.capsules.find { it.id == targetId }
+                if (targetCapsule == null) {
+                    val loaded = remoteRepository.getCapsules()
+                    _uiState.update { current ->
+                        current.copy(
+                            capsules = loaded,
+                            selectedCapsuleId = current.selectedCapsuleId ?: loaded.firstOrNull()?.id
+                        )
+                    }
+                    syncUnlockNotifications()
+                    targetCapsule = loaded.find { it.id == targetId }
+                }
+
+                if (targetCapsule == null) {
+                    _snackbarEvents.tryEmit(appContext.getString(R.string.capsule_deleted_or_unavailable))
+                    return@launch
+                }
+
+                _uiState.update { it.copy(selectedCapsuleId = targetCapsule.id) }
+                if (targetCapsule.hasUnlockedStage && targetCapsule.openedAt == null) {
+                    openCapsule(targetCapsule.id, onOpened = onNavigateToTimeline)
+                } else {
+                    onNavigateToTimeline()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: SessionExpiredException) {
+                handleUnauthorized()
+            } catch (_: Exception) {
+                _snackbarEvents.tryEmit(appContext.getString(R.string.capsule_deleted_or_unavailable))
+            }
+        }
     }
 
     fun openCapsule(capsuleId: String, onOpened: () -> Unit = {}) {
@@ -908,6 +966,15 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val updated = remoteRepository.openCapsule(capsuleId)
                 updateCapsuleInState(updated)
+                if (updated.openedAt != null && _uiState.value.isNotificationsEnabled) {
+                    CapsuleUnlockScheduler.scheduleAnniversaryIfNeeded(
+                        context = appContext,
+                        capsuleId = updated.id,
+                        title = updated.title,
+                        openedAtMillis = updated.openedAt,
+                        quietHoursEnabled = _uiState.value.isQuietHoursEnabled
+                    )
+                }
                 syncUnlockNotifications()
                 _snackbarEvents.tryEmit(appContext.getString(R.string.capsule_opened_success, updated.title))
                 onOpened()
@@ -1703,6 +1770,23 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
             } else {
                 CapsuleUnlockScheduler.cancelAll(appContext)
             }
+        }
+    }
+
+    fun toggleQuietHours(enabled: Boolean) {
+        viewModelScope.launch {
+            UserPreferences.setQuietHoursEnabled(appContext, enabled)
+            _uiState.update { it.copy(isQuietHoursEnabled = enabled) }
+            if (_uiState.value.isNotificationsEnabled) {
+                syncUnlockNotifications()
+            }
+        }
+    }
+
+    fun markNotificationPromptedOnSeal() {
+        viewModelScope.launch {
+            UserPreferences.setPromptedNotificationOnSeal(appContext)
+            _uiState.update { it.copy(hasPromptedNotificationOnSeal = true) }
         }
     }
 

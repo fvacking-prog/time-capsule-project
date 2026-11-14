@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -171,12 +172,38 @@ fun CreateCapsuleScreen(
     onStageDateChange: (Int, Long) -> Unit,
     onStageTimeChange: (Int, Int, Int) -> Boolean = { _, _, _ -> true },
     onStageSecretChange: (Int, String) -> Unit,
+    shouldPromptNotificationOnSeal: Boolean = false,
+    onNotificationPrompted: () -> Unit = {},
     onOpenConfirmDialog: () -> Unit = {},
     onDismissConfirmDialog: () -> Unit = {},
     onSubmit: () -> Unit
 ) {
     val creatorId = currentUserId ?: ""
     val context = LocalContext.current
+
+    val sealNotificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        onNotificationPrompted()
+        onOpenConfirmDialog()
+    }
+
+    val handleSealClick = {
+        if (shouldPromptNotificationOnSeal && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                sealNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                onNotificationPrompted()
+                onOpenConfirmDialog()
+            }
+        } else {
+            onOpenConfirmDialog()
+        }
+    }
 
     val voiceRecorder = remember { VoiceRecorderHelper(context) }
     val voicePlayer = remember { VoicePlayerHelper() }
@@ -1463,7 +1490,7 @@ fun CreateCapsuleScreen(
                 )
                 .then(
                     if (!formState.isSubmitting) {
-                        Modifier.clickable(onClick = onOpenConfirmDialog)
+                        Modifier.clickable(onClick = handleSealClick)
                     } else {
                         Modifier
                     }

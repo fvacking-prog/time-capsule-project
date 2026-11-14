@@ -18,3 +18,5 @@ keystore.properties
 *.h2.db
 .android/
 android-client/.android/
+.kotlin/
+**/.kotlin/

@@ -350,12 +350,23 @@
     <string name="recipients_self_hint">Оставьте пустым — капсула будет только для вас</string>
     <string name="recipients_max_limit">Можно выбрать не более 10 получателей</string>
     <string name="recipients_selected_count">Выбрано получателей: %1$d / 10</string>
-    <string name="notification_channel_name">Капсулы времени</string>
-    <string name="notification_channel_desc">Локальные оповещения о наступлении даты открытия капсул</string>
+    <string name="notification_channel_name">Открытие капсул</string>
+    <string name="notification_channel_desc">Оповещения о наступлении даты открытия капсул времени</string>
+    <string name="notification_channel_social_name">Входящие и групповые капсулы</string>
+    <string name="notification_channel_social_desc">Оповещения о капсулах от друзей и групповых событиях</string>
+    <string name="notification_channel_anniversary_name">Годовщины воспоминаний</string>
+    <string name="notification_channel_anniversary_desc">Напоминания через год после открытия капсулы времени</string>
     <string name="notification_default_title">Капсула времени</string>
     <string name="notification_unlock_title">Капсула готова к открытию</string>
     <string name="notification_unlock_body">Капсула «%1$s» достигла даты открытия</string>
     <string name="notification_inbox_unlock_body">Входящая капсула «%1$s» от @%2$s готова к открытию</string>
+    <string name="notification_anniversary_title">Годовщина воспоминания</string>
+    <string name="notification_anniversary_body">Ровно год назад вы открыли капсулу «%1$s». Вспомните этот момент!</string>
+    <string name="quiet_hours_toggle_title">Тихие часы (23:00–08:00)</string>
+    <string name="quiet_hours_toggle_desc">Переносить ночные уведомления на 08:00 утра</string>
+    <string name="notification_permission_granted_status">Статус разрешения: уведомления разрешены в системе</string>
+    <string name="notification_permission_denied_status">Статус разрешения: запрещены в настройках Android (нажмите для включения)</string>
+    <string name="capsule_deleted_or_unavailable">Капсула удалена или недоступна</string>
     <string name="server_waking_up">Сервер просыпается, подождите до минуты</string>
 
     <!-- Phase 5: In-App Updates -->

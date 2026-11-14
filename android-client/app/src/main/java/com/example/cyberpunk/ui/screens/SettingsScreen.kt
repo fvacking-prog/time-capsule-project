@@ -1,5 +1,14 @@
 package com.example.cyberpunk.ui.screens
 
+import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -47,6 +56,11 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,6 +71,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.AsyncImage
 import com.example.cyberpunk.BuildConfig
 import com.example.cyberpunk.R
@@ -70,6 +89,21 @@ import com.example.cyberpunk.ui.theme.TokyoSecondary
 import com.example.cyberpunk.ui.theme.TokyoSurface
 import com.example.cyberpunk.ui.viewmodel.CapsuleUiState
 
+private fun checkSystemNotificationPermission(context: Context): Boolean {
+    val runtimeGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+    } else {
+        true
+    }
+    val systemEnabled = runCatching {
+        NotificationManagerCompat.from(context).areNotificationsEnabled()
+    }.getOrDefault(true)
+    return runtimeGranted && systemEnabled
+}
+
 @Composable
 fun SettingsScreen(
     uiState: CapsuleUiState,
@@ -77,6 +111,7 @@ fun SettingsScreen(
     onOpenSetPinDialog: () -> Unit,
     onRemovePin: () -> Unit,
     onToggleNotifications: (Boolean) -> Unit,
+    onToggleQuietHours: (Boolean) -> Unit = {},
     onExportData: () -> Unit,
     onOpenDeleteDataDialog: () -> Unit,
     onDismissDeleteDataDialog: () -> Unit,
@@ -87,6 +122,29 @@ fun SettingsScreen(
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var hasNotificationPermission by remember {
+        mutableStateOf(checkSystemNotificationPermission(context))
+    }
+
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasNotificationPermission = checkSystemNotificationPermission(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasNotificationPermission = granted && checkSystemNotificationPermission(context)
+        onToggleNotifications(granted)
+    }
 
     // Delete Data Confirmation Dialog
     if (uiState.showConfirmDeleteDataDialog) {
@@ -401,14 +459,85 @@ fun SettingsScreen(
                             text = stringResource(R.string.notifications_toggle_desc),
                             style = MaterialTheme.typography.bodySmall.copy(color = TokyoOnSurface)
                         )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (hasNotificationPermission) {
+                                stringResource(R.string.notification_permission_granted_status)
+                            } else {
+                                stringResource(R.string.notification_permission_denied_status)
+                            },
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = if (hasNotificationPermission) TokyoAccent else TokyoError
+                            ),
+                            modifier = Modifier.clickable(enabled = !hasNotificationPermission) {
+                                runCatching {
+                                    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                        putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                    }
+                                    context.startActivity(intent)
+                                }.onFailure {
+                                    runCatching {
+                                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                            data = Uri.fromParts("package", context.packageName, null)
+                                        }
+                                        context.startActivity(intent)
+                                    }
+                                }
+                            }
+                        )
                     }
 
                     Switch(
                         checked = uiState.isNotificationsEnabled,
-                        onCheckedChange = onToggleNotifications,
+                        onCheckedChange = { enable ->
+                            if (enable && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                val granted = ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.POST_NOTIFICATIONS
+                                ) == PackageManager.PERMISSION_GRANTED
+                                if (!granted) {
+                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                } else {
+                                    hasNotificationPermission = checkSystemNotificationPermission(context)
+                                    onToggleNotifications(true)
+                                }
+                            } else {
+                                hasNotificationPermission = checkSystemNotificationPermission(context)
+                                onToggleNotifications(enable)
+                            }
+                        },
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = TokyoBackground,
                             checkedTrackColor = TokyoSecondary
+                        )
+                    )
+                }
+
+                // Quiet hours 23:00-08:00 toggle
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.quiet_hours_toggle_title),
+                            style = MaterialTheme.typography.bodyMedium.copy(color = TokyoOnBackground)
+                        )
+                        Text(
+                            text = stringResource(R.string.quiet_hours_toggle_desc),
+                            style = MaterialTheme.typography.bodySmall.copy(color = TokyoOnSurface)
+                        )
+                    }
+
+                    Switch(
+                        checked = uiState.isQuietHoursEnabled,
+                        onCheckedChange = onToggleQuietHours,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = TokyoBackground,
+                            checkedTrackColor = TokyoPrimary
                         )
                     )
                 }
