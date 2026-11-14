@@ -1,9 +1,11 @@
 package com.example.cyberpunk
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -173,12 +175,15 @@ fun TimeCapsuleApp(
         )
     }
 
-    if (uiState.isPinSet && !uiState.isPinUnlocked) {
-        EnterPinDialog(
-            errorText = uiState.pinError,
-            onPinEntered = capsuleViewModel::verifyPin,
-            onForgotPin = capsuleViewModel::forgotPin
-        )
+    LaunchedEffect(uiState.isPinSet, uiState.isPinUnlocked) {
+        val window = (context as? Activity)?.window ?: return@LaunchedEffect
+        if (uiState.isPinSet && !uiState.isPinUnlocked) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        } else if (!uiState.isPinSet) {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
     }
 
     val pendingUpdate = uiState.availableUpdate
@@ -233,6 +238,28 @@ fun TimeCapsuleApp(
                     onGoogleIdTokenReceived = capsuleViewModel::signInWithGoogle,
                     onGoogleSignInError = capsuleViewModel::onGoogleSignInError,
                     onOpenSettings = capsuleViewModel::openSettingsDialog
+                )
+            }
+        }
+        return
+    }
+
+    if (uiState.isPinSet && !uiState.isPinUnlocked) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = TokyoBackground,
+            snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+        ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+                EnterPinDialog(
+                    errorText = uiState.pinError,
+                    lockoutRemainingSeconds = uiState.pinLockoutRemainingSeconds,
+                    onPinEntered = capsuleViewModel::verifyPin,
+                    onForgotPin = capsuleViewModel::forgotPin
                 )
             }
         }

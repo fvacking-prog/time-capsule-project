@@ -19,6 +19,7 @@ import com.example.cyberpunk.data.HandleLocalValidation
 import com.example.cyberpunk.data.HandleValidator
 import com.example.cyberpunk.data.LocationProvider
 import com.example.cyberpunk.data.MediaHelper
+import com.example.cyberpunk.data.PinCheckResult
 import com.example.cyberpunk.data.RemoteCapsuleRepository
 import com.example.cyberpunk.data.SessionExpiredException
 import com.example.cyberpunk.data.UnlockDateTimeHelper
@@ -144,6 +145,8 @@ data class CapsuleUiState(
     val showPinPromptDialog: Boolean = false,
     val showSetPinDialog: Boolean = false,
     val pinError: String? = null,
+    val pinLockoutRemainingSeconds: Int = 0,
+    val isBiometricEnabled: Boolean = false,
     val isNotificationsEnabled: Boolean = true,
     val isQuietHoursEnabled: Boolean = false,
     val hasPromptedNotificationOnSeal: Boolean = false,
@@ -233,6 +236,7 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
     private var handleCheckJob: Job? = null
     private var waitingForInstallPermission: Boolean = false
     private var locationFetchJob: Job? = null
+    private var pinLockoutTimerJob: Job? = null
 
     init {
         ApiConfig.init(appContext)
@@ -242,17 +246,23 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
 
         viewModelScope.launch {
             val hasPin = UserPreferences.hasPinFlow(appContext).first()
+            val biometric = UserPreferences.isBiometricEnabledFlow(appContext).first()
             val notif = UserPreferences.isNotificationsEnabledFlow(appContext).first()
             val quietHours = UserPreferences.isQuietHoursEnabledFlow(appContext).first()
             val promptedOnSeal = UserPreferences.hasPromptedNotificationOnSealFlow(appContext).first()
+            val lockoutUntil = UserPreferences.getLockoutUntilMillis(appContext)
             _uiState.update {
                 it.copy(
                     isPinSet = hasPin,
                     isPinUnlocked = !hasPin,
+                    isBiometricEnabled = hasPin && biometric,
                     isNotificationsEnabled = notif,
                     isQuietHoursEnabled = quietHours,
                     hasPromptedNotificationOnSeal = promptedOnSeal
                 )
+            }
+            if (hasPin && lockoutUntil > System.currentTimeMillis()) {
+                startPinLockoutCountdown(lockoutUntil)
             }
         }
 
@@ -1499,37 +1509,121 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
     fun setupPin(pin: String) {
         if (pin.length != 4) return
         viewModelScope.launch {
+            pinLockoutTimerJob?.cancel()
             UserPreferences.setPin(appContext, pin)
-            _uiState.update { it.copy(isPinSet = true, isPinUnlocked = true, showSetPinDialog = false) }
+            _uiState.update {
+                it.copy(
+                    isPinSet = true,
+                    isPinUnlocked = true,
+                    showSetPinDialog = false,
+                    pinError = null,
+                    pinLockoutRemainingSeconds = 0
+                )
+            }
             _snackbarEvents.tryEmit(appContext.getString(R.string.pin_set_success))
+        }
+    }
+
+    private fun startPinLockoutCountdown(lockoutUntilMillis: Long) {
+        pinLockoutTimerJob?.cancel()
+        pinLockoutTimerJob = viewModelScope.launch {
+            while (true) {
+                val now = System.currentTimeMillis()
+                val remainingMs = lockoutUntilMillis - now
+                if (remainingMs <= 0L) {
+                    _uiState.update { it.copy(pinLockoutRemainingSeconds = 0, pinError = null) }
+                    break
+                }
+                val sec = ((remainingMs + 999L) / 1000L).toInt().coerceAtLeast(1)
+                _uiState.update { it.copy(pinLockoutRemainingSeconds = sec) }
+                delay(1_000L)
+            }
         }
     }
 
     fun verifyPin(pin: String) {
         if (pin.length != 4) return
         viewModelScope.launch {
-            val valid = UserPreferences.verifyPin(appContext, pin)
-            if (valid) {
-                _uiState.update { it.copy(isPinUnlocked = true, showPinPromptDialog = false, pinError = null) }
-            } else {
-                _uiState.update { it.copy(pinError = appContext.getString(R.string.pin_incorrect)) }
+            when (val result = UserPreferences.verifyPinWithCooldown(appContext, pin)) {
+                is PinCheckResult.Success -> {
+                    pinLockoutTimerJob?.cancel()
+                    _uiState.update {
+                        it.copy(
+                            isPinUnlocked = true,
+                            showPinPromptDialog = false,
+                            pinError = null,
+                            pinLockoutRemainingSeconds = 0
+                        )
+                    }
+                }
+                is PinCheckResult.Invalid -> {
+                    _uiState.update {
+                        it.copy(
+                            pinError = "${appContext.getString(R.string.pin_incorrect)} (осталось попыток: ${result.attemptsLeft})"
+                        )
+                    }
+                }
+                is PinCheckResult.LockedOut -> {
+                    startPinLockoutCountdown(result.lockoutUntilMillis)
+                }
             }
         }
     }
 
+    fun toggleBiometric(enabled: Boolean) {
+        if (!_uiState.value.isPinSet) return
+        viewModelScope.launch {
+            UserPreferences.setBiometricEnabled(appContext, enabled)
+            _uiState.update { it.copy(isBiometricEnabled = enabled) }
+        }
+    }
+
+    fun unlockViaBiometric() {
+        pinLockoutTimerJob?.cancel()
+        viewModelScope.launch {
+            UserPreferences.resetPinLockout(appContext)
+        }
+        _uiState.update {
+            it.copy(
+                isPinUnlocked = true,
+                showPinPromptDialog = false,
+                pinError = null,
+                pinLockoutRemainingSeconds = 0
+            )
+        }
+    }
+
     fun removePin() {
+        pinLockoutTimerJob?.cancel()
         viewModelScope.launch {
             UserPreferences.clearPin(appContext)
-            _uiState.update { it.copy(isPinSet = false, isPinUnlocked = true) }
+            _uiState.update {
+                it.copy(
+                    isPinSet = false,
+                    isPinUnlocked = true,
+                    isBiometricEnabled = false,
+                    pinError = null,
+                    pinLockoutRemainingSeconds = 0
+                )
+            }
             _snackbarEvents.tryEmit(appContext.getString(R.string.pin_removed_success))
         }
     }
 
     fun forgotPin() {
+        pinLockoutTimerJob?.cancel()
         viewModelScope.launch(coroutineExceptionHandler) {
             UserPreferences.clearPin(appContext)
             logout()
-            _uiState.update { it.copy(isPinSet = false, isPinUnlocked = true, pinError = null) }
+            _uiState.update {
+                it.copy(
+                    isPinSet = false,
+                    isPinUnlocked = true,
+                    isBiometricEnabled = false,
+                    pinError = null,
+                    pinLockoutRemainingSeconds = 0
+                )
+            }
             _snackbarEvents.tryEmit(appContext.getString(R.string.pin_reset_success))
         }
     }

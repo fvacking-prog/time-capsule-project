@@ -285,7 +285,7 @@
     <string name="settings_data_section">Управление данными</string>
     <string name="settings_about_section">О приложении</string>
     <string name="pin_lock_title">PIN-блокировка приложения</string>
-    <string name="pin_lock_desc">Защита доступа 4-значным PIN-кодом (хеш SHA-256 с солью)</string>
+    <string name="pin_lock_desc">Защита доступа 4-значным PIN-кодом (PBKDF2-HMAC-SHA256 с солью)</string>
     <string name="dialog_set_pin_title">Установка 4-значного PIN-кода</string>
     <string name="dialog_enter_pin_title">Введите PIN-код для входа</string>
     <string name="pin_incorrect">Неверный PIN-код</string>
