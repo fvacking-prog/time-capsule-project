@@ -2,6 +2,7 @@
 package com.timecapsule.server
 
 import com.timecapsule.shared.ParticipantStatusDto
+import org.slf4j.LoggerFactory
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.pow
@@ -9,9 +10,11 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 object GeoUtils {
+    private val logger = LoggerFactory.getLogger(GeoUtils::class.java)
     private const val EARTH_RADIUS_METERS = 6_371_000.0
     private const val RECENT_THRESHOLD_MS = 60_000L
     const val LOCKED_PLACEHOLDER = "[ЗАШИФРОВАНО AES-256-GCM]"
+    const val CORRUPTED_DATA_PLACEHOLDER = "[ОШИБКА ЧТЕНИЯ ДАННЫХ]"
 
     fun haversineMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
         val dLat = Math.toRadians(lat2 - lat1)
@@ -56,7 +59,12 @@ object GeoUtils {
         decrypt: (String) -> String = CryptoUtils::decrypt
     ): String {
         return if (now >= unlockDate && allParticipantsNearbyAndRecent) {
-            decrypt(encryptedText)
+            try {
+                decrypt(encryptedText)
+            } catch (e: Exception) {
+                logger.warn("Не удалось расшифровать этап капсулы (${e.javaClass.simpleName})")
+                CORRUPTED_DATA_PLACEHOLDER
+            }
         } else {
             LOCKED_PLACEHOLDER
         }

@@ -2241,6 +2241,107 @@ class BackendUnitTests {
         }
         assertEquals(HttpStatusCode.PayloadTooLarge, resp.status)
     }
+
+    @Test
+    fun `key rotation reads old ciphertext with CAPSULE_AES_KEY_PREVIOUS without format change and corrupted ciphertext does not crash list`() {
+        val oldKeyBytes = ByteArray(32) { (it + 77).toByte() }
+        val newKeyBytes = ByteArray(32) { (it + 111).toByte() }
+        val oldKeyBase64 = Base64.getEncoder().encodeToString(oldKeyBytes)
+        val newKeyBase64 = Base64.getEncoder().encodeToString(newKeyBytes)
+
+        try {
+            // 1. Encrypt data using old key as primary
+            System.setProperty("CAPSULE_AES_KEY", oldKeyBase64)
+            System.clearProperty("CAPSULE_AES_KEY_PREVIOUS")
+            val oldCiphertext = CryptoUtils.encrypt("Старое письмо из 2025")
+            val oldMediaEncrypted = CryptoUtils.encryptBytes(byteArrayOf(10, 20, 30, 40))
+
+            // Verify format has NOT changed: raw bytes = 12-byte IV + ciphertext + 16-byte GCM tag
+            val rawOldMedia = oldMediaEncrypted
+            assertEquals(12 + 4 + 16, rawOldMedia.size)
+
+            // 2. Rotate key: new key in CAPSULE_AES_KEY, old key in CAPSULE_AES_KEY_PREVIOUS
+            System.setProperty("CAPSULE_AES_KEY", newKeyBase64)
+            System.setProperty("CAPSULE_AES_KEY_PREVIOUS", oldKeyBase64)
+
+            val newCiphertext = CryptoUtils.encrypt("Новое письмо после ротации")
+
+            // Both old and new ciphertexts are readable seamlessly
+            assertEquals("Старое письмо из 2025", CryptoUtils.decrypt(oldCiphertext))
+            assertEquals("Новое письмо после ротации", CryptoUtils.decrypt(newCiphertext))
+            assertTrue(byteArrayOf(10, 20, 30, 40).contentEquals(CryptoUtils.decryptBytes(oldMediaEncrypted)))
+
+            // 3. Corrupted ciphertext in DB does not crash buildCapsuleDtosBatch / stageText
+            val testDb = Database.connect(
+                url = "jdbc:h2:mem:test_corrupt_${UUID.randomUUID()};DB_CLOSE_DELAY=-1",
+                driver = "org.h2.Driver"
+            )
+            val now = System.currentTimeMillis()
+            transaction(testDb) {
+                SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks, CapsuleMedia)
+                Users.insert {
+                    it[id] = "user_rot"
+                    it[username] = "RotUser"
+                    it[handle] = "rot_user"
+                }
+                // Capsule 1: valid old ciphertext
+                Capsules.insert {
+                    it[id] = "cap_old_ok"
+                    it[creatorId] = "user_rot"
+                    it[title] = "Old Capsule"
+                    it[latitude] = 0.0
+                    it[longitude] = 0.0
+                    it[radiusMeters] = 50.0
+                    it[createdAt] = now - 10_000L
+                    it[isGroupCapsule] = false
+                    it[isGeoLocked] = false
+                }
+                CapsuleParticipants.insert {
+                    it[capsuleId] = "cap_old_ok"
+                    it[userId] = "user_rot"
+                }
+                CapsuleStages.insert {
+                    it[id] = "stage_old_ok"
+                    it[capsuleId] = "cap_old_ok"
+                    it[stageNumber] = 1
+                    it[unlockDate] = now - 5_000L
+                    it[encryptedText] = oldCiphertext
+                }
+
+                // Capsule 2: corrupted ciphertext
+                Capsules.insert {
+                    it[id] = "cap_corrupted"
+                    it[creatorId] = "user_rot"
+                    it[title] = "Corrupted Capsule"
+                    it[latitude] = 0.0
+                    it[longitude] = 0.0
+                    it[radiusMeters] = 50.0
+                    it[createdAt] = now - 9_000L
+                    it[isGroupCapsule] = false
+                    it[isGeoLocked] = false
+                }
+                CapsuleParticipants.insert {
+                    it[capsuleId] = "cap_corrupted"
+                    it[userId] = "user_rot"
+                }
+                CapsuleStages.insert {
+                    it[id] = "stage_corrupted"
+                    it[capsuleId] = "cap_corrupted"
+                    it[stageNumber] = 1
+                    it[unlockDate] = now - 5_000L
+                    it[encryptedText] = "!!!not-valid-ciphertext!!!"
+                }
+
+                val dtos = buildCapsuleDtosBatch(listOf("cap_old_ok", "cap_corrupted"), now, requestingUserId = "user_rot")
+                assertEquals(2, dtos.size)
+                assertEquals("Старое письмо из 2025", dtos[0].stages.first().text)
+                assertEquals(GeoUtils.CORRUPTED_DATA_PLACEHOLDER, dtos[1].stages.first().text)
+            }
+        } finally {
+            System.clearProperty("CAPSULE_AES_KEY")
+            System.clearProperty("CAPSULE_AES_KEY_PREVIOUS")
+        }
+    }
 }
 
 

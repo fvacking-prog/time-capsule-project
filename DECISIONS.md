@@ -130,4 +130,8 @@
 7. **R1.7 (Аудит 9 и 10): 7 индексов БД и SQL-поиск пользователей по `@handle` (`like` + `limit(30)` + исключение блокировок)**:
    - В `Tables.kt` объявлены индексы на `Capsules.creatorId`, `CapsuleStages.capsuleId`, `CapsuleParticipants.userId`, `CapsuleMedia.capsuleId`, `Sessions.userId`, `Sessions.expiresAt`, `Blocks.blockedUserId`. В `migrateDatabase()` при старте дополнительно выполняются явные `CREATE INDEX IF NOT EXISTS ...` для гарантированного создания в PostgreSQL и H2.
    - `searchUsersByQuery` переписан без выгрузки всей таблицы `Users` в память: фильтрация выполняется на стороне СУБД через `lowerCase() like ...`, `notInSubQuery` (исключение заблокированных в обе стороны), `orderBy(Users.handle)` и `.limit(30)`.
+8. **R1.8 (Аудит 15): Бесшовная ротация ключа через `CAPSULE_AES_KEY_PREVIOUS` и защита списка от повреждённого шифротекста**:
+   - Формат шифротекста `[12 байт IV][GCM ciphertext + 16 байт tag]` не изменён: любые существующие записи в БД читаются напрямую.
+   - При возникновении `AEADBadTagException` во время расшифровки (`decryptBytes`) и наличии `CAPSULE_AES_KEY_PREVIOUS` автоматически выполняется повторная попытка расшифровки предыдущим ключом.
+   - В `GeoUtils.stageText` ошибка расшифровки повреждённой записи логируется предупреждением (только тип исключения, без секретов и данных) и возвращает заглушку `CORRUPTED_DATA_PLACEHOLDER`, не роняя выдачу всего списка капсул.
 

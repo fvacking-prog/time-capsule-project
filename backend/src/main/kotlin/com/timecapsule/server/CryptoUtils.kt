@@ -18,9 +18,24 @@ object CryptoUtils {
 
     private val secureRandom = SecureRandom()
 
+    @Volatile
+    private var cachedCurrentRaw: String? = null
+    @Volatile
+    private var cachedCurrentKey: SecretKeySpec? = null
+
+    @Volatile
+    private var cachedPreviousRaw: String? = null
+    @Volatile
+    private var cachedPreviousKey: SecretKeySpec? = null
+
     internal fun resolveConfiguredKey(): String? {
-        return System.getenv("CAPSULE_AES_KEY")?.trim()?.takeIf { it.isNotEmpty() }
-            ?: System.getProperty("CAPSULE_AES_KEY")?.trim()?.takeIf { it.isNotEmpty() }
+        return System.getProperty("CAPSULE_AES_KEY")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: System.getenv("CAPSULE_AES_KEY")?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    internal fun resolvePreviousConfiguredKey(): String? {
+        return System.getProperty("CAPSULE_AES_KEY_PREVIOUS")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: System.getenv("CAPSULE_AES_KEY_PREVIOUS")?.trim()?.takeIf { it.isNotEmpty() }
     }
 
     /**
@@ -54,17 +69,43 @@ object CryptoUtils {
 
     fun validateCryptoConfig(rawKey: String? = resolveConfiguredKey()) {
         parseAesKey(rawKey)
-        logger.info("CAPSULE_AES_KEY успешно загружен и верифицирован ($KEY_LENGTH_BYTES байт).")
+        val prevRaw = resolvePreviousConfiguredKey()
+        if (!prevRaw.isNullOrEmpty()) {
+            parseAesKey(prevRaw)
+            logger.info("CAPSULE_AES_KEY и CAPSULE_AES_KEY_PREVIOUS успешно загружены и верифицированы ($KEY_LENGTH_BYTES байт).")
+        } else {
+            logger.info("CAPSULE_AES_KEY успешно загружен и верифицирован ($KEY_LENGTH_BYTES байт).")
+        }
     }
 
-    private val secretKey: SecretKeySpec by lazy {
-        parseAesKey(resolveConfiguredKey())
+    private fun currentSecretKey(): SecretKeySpec {
+        val raw = resolveConfiguredKey()
+        val cached = cachedCurrentKey
+        if (cached != null && raw == cachedCurrentRaw) {
+            return cached
+        }
+        val parsed = parseAesKey(raw)
+        cachedCurrentRaw = raw
+        cachedCurrentKey = parsed
+        return parsed
+    }
+
+    private fun previousSecretKeyOrNull(): SecretKeySpec? {
+        val raw = resolvePreviousConfiguredKey() ?: return null
+        val cached = cachedPreviousKey
+        if (cached != null && raw == cachedPreviousRaw) {
+            return cached
+        }
+        val parsed = parseAesKey(raw)
+        cachedPreviousRaw = raw
+        cachedPreviousKey = parsed
+        return parsed
     }
 
     fun encryptBytes(plainBytes: ByteArray): ByteArray {
         val iv = ByteArray(IV_LENGTH_BYTES).also { secureRandom.nextBytes(it) }
         val cipher = Cipher.getInstance(ALGORITHM)
-        cipher.init(Cipher.ENCRYPT_MODE, secretKey, GCMParameterSpec(TAG_LENGTH_BITS, iv))
+        cipher.init(Cipher.ENCRYPT_MODE, currentSecretKey(), GCMParameterSpec(TAG_LENGTH_BITS, iv))
 
         val cipherBytes = cipher.doFinal(plainBytes)
         val combined = ByteArray(iv.size + cipherBytes.size)
@@ -79,10 +120,16 @@ object CryptoUtils {
         val iv = combined.copyOfRange(0, IV_LENGTH_BYTES)
         val cipherBytes = combined.copyOfRange(IV_LENGTH_BYTES, combined.size)
 
-        val cipher = Cipher.getInstance(ALGORITHM)
-        cipher.init(Cipher.DECRYPT_MODE, secretKey, GCMParameterSpec(TAG_LENGTH_BITS, iv))
-
-        return cipher.doFinal(cipherBytes)
+        return try {
+            val cipher = Cipher.getInstance(ALGORITHM)
+            cipher.init(Cipher.DECRYPT_MODE, currentSecretKey(), GCMParameterSpec(TAG_LENGTH_BITS, iv))
+            cipher.doFinal(cipherBytes)
+        } catch (e: javax.crypto.AEADBadTagException) {
+            val prevKey = previousSecretKeyOrNull() ?: throw e
+            val fallbackCipher = Cipher.getInstance(ALGORITHM)
+            fallbackCipher.init(Cipher.DECRYPT_MODE, prevKey, GCMParameterSpec(TAG_LENGTH_BITS, iv))
+            fallbackCipher.doFinal(cipherBytes)
+        }
     }
 
     fun encrypt(plain: String): String {
