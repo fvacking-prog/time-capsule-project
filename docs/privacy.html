@@ -186,7 +186,7 @@
             <a href="index.html" class="btn-back">← На главную</a>
             <div><span class="badge">Privacy Policy</span></div>
             <h1>Политика конфиденциальности «Time Capsule 2.0»</h1>
-            <div class="subtitle">Дата последнего обновления: <strong>12.11.2026</strong></div>
+            <div class="subtitle">Дата последнего обновления: <strong>14.11.2026</strong></div>
 
             <p>
                 Настоящая Политика конфиденциальности описывает, как мобильное приложение <strong>Time Capsule 2.0</strong>
@@ -194,20 +194,22 @@
                 Мы относимся к вашей приватности с максимальной ответственностью и руководствуемся принципом криптографической защиты данных.
             </p>
 
-            <h2>1. Какие данные собираются</h2>
+            <h2>1. Какие данные собираются и какие разрешения используются</h2>
             <p>Для предоставления функциональности сервиса приложение использует только минимально необходимый набор данных:</p>
             <ul>
-                <li><strong>Учётная запись Google:</strong> имя пользователя (display name), адрес электронной почты (email) и ссылка на аватар (photo URL) — исключительно для входа через Google (Credential Manager API) и отображения вашего профиля. Email других пользователей никогда не передаётся посторонним лицам через API.</li>
+                <li><strong>Учётная запись Google:</strong> имя пользователя (display name), адрес электронной почты (email) и ссылка на аватар (photo URL) — исключительно для входа через Google (Credential Manager API) и отображения вашего профиля. Email и идентификатор Google (<code>googleSub</code>) других пользователей никогда не передаются посторонним лицам через API.</li>
                 <li><strong>Пользовательский никнейм (@handle):</strong> уникальный псевдоним, который вы выбираете в приложении, чтобы другие пользователи могли находить вас и отправлять капсулы времени.</li>
-                <li><strong>Содержимое капсул:</strong> заголовок, тип послания, теги, дата и время открытия, а также текст секретного послания.</li>
+                <li><strong>Содержимое капсул:</strong> заголовок, тип послания, теги, дата и время открытия (включая многоэтапные капсулы до 5 этапов), а также текст секретного послания.</li>
                 <li><strong>Фотографии и голосовые вложения:</strong> при создании капсулы вы можете добровольно прикрепить одну фотографию и одно голосовое сообщение (до 60 секунд). Для записи голоса приложение запрашивает разрешение на доступ к микрофону (<code>RECORD_AUDIO</code>) строго во время нажатия кнопки записи. Для создания фото используется системный интерфейс камеры без постоянного прямого доступа приложения к объективу.</li>
                 <li><strong>Геолокация устройства (GPS):</strong> используется <em>исключительно</em> для гео-капсул во время проверки физического присутствия участников в заданном радиусе (радар и чекины). Мы не отслеживаем перемещения в постоянном фоновом режиме.</li>
+                <li><strong>Локальные уведомления (<code>POST_NOTIFICATIONS</code>, <code>RECEIVE_BOOT_COMPLETED</code>):</strong> уведомления о наступлении даты открытия капсулы и годовщине открытия планируются исключительно локально на вашем устройстве через системный <code>AlarmManager</code> и <code>WorkManager</code> (без использования сторонних облачных push-сервисов).</li>
+                <li><strong>Биометрическая разблокировка (<code>USE_BIOMETRIC</code>) и PIN-код:</strong> при включении защиты приложения проверка отпечатка пальца выполняется системным компонентом Android <code>BiometricPrompt</code> строго внутри защищённого аппаратного модуля устройства; биометрические шаблоны никогда не читаются приложением и не покидают устройство. PIN-код хранится локально в виде криптографического хеша <code>PBKDF2WithHmacSHA256</code> (60 000 итераций), а токен сессии защищён ключом <code>AndroidKeyStore</code> (<code>AES/GCM/NoPadding</code>).</li>
             </ul>
 
             <h2>2. Шифрование и безопасность данных</h2>
             <div class="callout">
                 <strong>Криптографическая защита:</strong> Тексты и медиафайлы (фотографии и аудиозаписи) всех капсул шифруются на сервере стойким симметричным алгоритмом <strong>AES-256-GCM</strong> с уникальным вектором инициализации (IV) для каждого объекта.
-                До наступления назначенной даты и времени открытия (а для гео-капсул — до момента сбора всех участников) секретный текст и медиавложения остаются зашифрованными на сервере и недоступны для скачивания и просмотра никому, включая отправителя и администратора базы данных.
+                До наступления назначенной даты и времени открытия (а для гео-капсул — до момента сбора всех участников) секретный текст и медиавложения остаются зашифрованными на сервере и недоступны для скачивания и просмотра никому, включая отправителя и администратора базы данных. При экспорте карточки открытой капсулы в PNG секретный текст письма не выводится на изображение.
             </div>
 
             <h2>3. Передача третьим лицам и реклама</h2>
@@ -222,12 +224,12 @@
                 Все сетевые соединения между клиентом и сервером защищены обязательным шифрованием <strong>HTTPS / TLS</strong>.
             </p>
 
-            <h2>5. Право на удаление данных</h2>
+            <h2>5. Право на полное удаление профиля и данных</h2>
             <p>
-                Вы имеете полное право удалить свои данные в любой момент. В самом приложении доступна функция безвозвратного удаления:
+                Вы имеете полное право удалить свой профиль и все связанные данные в любой момент. В самом приложении доступна функция безвозвратного удаления:
             </p>
             <p>
-                Перейдите в раздел <strong>«Настройки» → «Удалить все данные»</strong>. При подтверждении все ваши созданные капсулы, прикреплённые медиафайлы (фото и голос), сессии авторизации, история участия и профиль удаляются с сервера немедленно и окончательно, а локальный кэш медиафайлов очищается на устройстве.
+                Перейдите в раздел <strong>«Настройки» → «Удалить все данные»</strong> (вызывает <code>DELETE /api/v1/me/data</code>). При подтверждении все ваши созданные капсулы, этапы, прикреплённые медиафайлы (фото и голос в таблице <code>CapsuleMedia</code>), блокировки, активные сессии авторизации, история участия и <strong>сама запись вашего профиля в таблице пользователей (<code>Users</code>)</strong> удаляются с сервера немедленно и безвозвратно, а локальный кэш медиафайлов и токены очищаются на устройстве.
             </p>
 
             <h2>6. Контакты</h2>
@@ -243,13 +245,13 @@
                     <strong>Time Capsule 2.0</strong> collects your Google account profile (name, email, avatar) for authentication, chosen <code>@handle</code>, capsule contents, optional photo/voice attachments, and precise GPS location used strictly for geo-locked capsules during participant proximity verification.
                 </p>
                 <p>
-                    Audio recording requires microphone permission (<code>RECORD_AUDIO</code>), and taking photos uses the system camera picker without persistent camera permissions.
+                    Audio recording requires microphone permission (<code>RECORD_AUDIO</code>), taking photos uses the system camera picker, notifications (<code>POST_NOTIFICATIONS</code>) are scheduled locally on-device without external push servers, and optional biometric unlock (<code>USE_BIOMETRIC</code>) is handled strictly by the Android OS hardware keystore alongside local <code>PBKDF2WithHmacSHA256</code> PIN hashing.
                 </p>
                 <p>
                     All capsule messages and media files are encrypted on the server with <strong>AES-256-GCM</strong> (with a unique IV per file) and remain locked until the scheduled unlock criteria are met. We do not sell or share personal data with third parties, and there are no ads or trackers.
                 </p>
                 <p>
-                    You can permanently erase all your data (including media files) at any time via <strong>Settings &rarr; Delete all data</strong>. Contact: <a href="mailto:fvacking@gmail.com">fvacking@gmail.com</a>. Last updated: November 12, 2026.
+                    You can permanently erase your entire profile row (<code>Users</code>), capsules, and encrypted media files at any time via <strong>Settings &rarr; Delete all data</strong> (<code>DELETE /api/v1/me/data</code>). Contact: <a href="mailto:fvacking@gmail.com">fvacking@gmail.com</a>. Last updated: November 14, 2026.
                 </p>
             </div>
         </div>
