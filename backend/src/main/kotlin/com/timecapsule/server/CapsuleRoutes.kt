@@ -24,6 +24,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.header
 import io.ktor.server.request.receive
+import io.ktor.server.request.receiveStream
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
@@ -257,6 +258,42 @@ object AuthRateLimiter {
 internal var healthCheckFn: () -> Boolean = DatabaseConfig::isDatabaseHealthy
 internal var appVersionProviderFn: () -> AppVersionDto = { AppVersionConfig.fromEnv() }
 
+internal val routeJson = kotlinx.serialization.json.Json {
+    ignoreUnknownKeys = true
+    encodeDefaults = true
+}
+
+private const val DEFAULT_MAX_JSON_BODY_BYTES = 64 * 1024 // 64 KB for small JSON payloads
+
+internal fun readBytesWithLimit(
+    stream: java.io.InputStream,
+    maxBytes: Int,
+    tooLargeErrorMessage: String = "Превышен максимальный размер тела запроса ($maxBytes байт)"
+): ByteArray {
+    val bytes = stream.use { it.readNBytes(maxBytes + 1) }
+    if (bytes.size > maxBytes) {
+        throw PayloadTooLargeException(tooLargeErrorMessage)
+    }
+    return bytes
+}
+
+internal suspend inline fun <reified T> ApplicationCall.receiveJsonWithLimit(
+    maxBytes: Int = DEFAULT_MAX_JSON_BODY_BYTES,
+    tooLargeErrorMessage: String = "Превышен максимальный размер тела запроса ($maxBytes байт)"
+): T {
+    val contentLength = request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
+    if (contentLength != null && contentLength > maxBytes.toLong()) {
+        throw PayloadTooLargeException(tooLargeErrorMessage)
+    }
+    val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        readBytesWithLimit(receiveStream(), maxBytes, tooLargeErrorMessage)
+    }
+    if (bytes.isEmpty()) {
+        throw io.ktor.server.plugins.BadRequestException("Empty JSON payload")
+    }
+    return routeJson.decodeFromString<T>(String(bytes, Charsets.UTF_8))
+}
+
 fun Route.capsuleRoutes() {
     get("/health") {
         if (healthCheckFn()) {
@@ -274,7 +311,7 @@ fun Route.capsuleRoutes() {
         post("/google") {
             AuthRateLimiter.checkOrThrow(call, "google")
 
-            val request = call.receive<GoogleAuthRequest>()
+            val request = call.receiveJsonWithLimit<GoogleAuthRequest>()
             val rawIdToken = request.idToken.trim()
             if (rawIdToken.isEmpty()) {
                 throw IllegalArgumentException("idToken must not be blank")
@@ -374,7 +411,7 @@ fun Route.capsuleRoutes() {
 
         post {
             val currentUserId = call.requireAuthenticatedUserId()
-            val request = call.receive<BlockUserRequest>()
+            val request = call.receiveJsonWithLimit<BlockUserRequest>()
             val targetUserId = request.userId.trim()
             require(targetUserId.isNotEmpty() && targetUserId.length <= MAX_ID_LENGTH) {
                 "Некорректный идентификатор пользователя"
@@ -427,7 +464,7 @@ fun Route.capsuleRoutes() {
         put("/me/handle") {
             val currentUserId = call.requireAuthenticatedUserId()
             AuthRateLimiter.checkOrThrow(call, "handle")
-            val request = call.receive<UpdateHandleRequest>()
+            val request = call.receiveJsonWithLimit<UpdateHandleRequest>()
             val updated = updateUserHandle(currentUserId, request.handle)
             call.respond(updated)
         }
@@ -465,11 +502,10 @@ fun Route.capsuleRoutes() {
 
         post {
             val authenticatedUserId = call.requireAuthenticatedUserId()
-            val contentLength = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
-            if (contentLength != null && contentLength > MAX_CREATE_CAPSULE_BODY_BYTES) {
-                throw IllegalArgumentException("Превышен лимит размера тела создания капсулы (максимум 2.5 МБ)")
-            }
-            val request = call.receive<CreateCapsuleRequest>()
+            val request = call.receiveJsonWithLimit<CreateCapsuleRequest>(
+                maxBytes = MAX_CREATE_CAPSULE_BODY_BYTES.toInt(),
+                tooLargeErrorMessage = "Превышен лимит размера тела создания капсулы (максимум 2.5 МБ)"
+            )
             if (request.attachments.isNotEmpty()) {
                 AuthRateLimiter.checkOrThrow(call, "media_upload")
             }
@@ -657,7 +693,7 @@ fun Route.capsuleRoutes() {
         post("/join") {
             val authenticatedUserId = call.requireAuthenticatedUserId()
             AuthRateLimiter.checkOrThrow(call, "join")
-            val request = call.receive<com.timecapsule.shared.JoinCapsuleRequest>()
+            val request = call.receiveJsonWithLimit<com.timecapsule.shared.JoinCapsuleRequest>()
             val capsule = transaction {
                 joinCapsuleByInviteCode(
                     rawInviteCode = request.inviteCode,
@@ -670,7 +706,7 @@ fun Route.capsuleRoutes() {
         post("/{id}/check-in") {
             val authenticatedUserId = call.requireAuthenticatedUserId()
             val capsuleId = call.parameters["id"] ?: throw CapsuleNotFoundException("Missing capsule id")
-            val request = call.receive<CheckInRequest>()
+            val request = call.receiveJsonWithLimit<CheckInRequest>()
             validateCheckInRequest(request, authenticatedUserId)
             val capsule = transaction {
                 if (!canUserAccessCapsule(capsuleId, authenticatedUserId)) {

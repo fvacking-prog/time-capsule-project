@@ -47,6 +47,7 @@ class ForbiddenException(message: String) : RuntimeException(message)
 class UnauthorizedException(message: String) : RuntimeException(message)
 class ConflictException(message: String) : RuntimeException(message)
 class TooManyRequestsException(message: String) : RuntimeException(message)
+class PayloadTooLargeException(message: String) : RuntimeException(message)
 
 fun main() {
     try {
@@ -216,6 +217,12 @@ fun Application.installSerializationAndErrors() {
             call.respondText(
                 text = cause.message ?: "Too many requests",
                 status = HttpStatusCode.TooManyRequests
+            )
+        }
+        exception<PayloadTooLargeException> { call, cause ->
+            call.respondText(
+                text = cause.message ?: "Payload Too Large",
+                status = HttpStatusCode.PayloadTooLarge
             )
         }
         exception<ConflictException> { call, cause ->

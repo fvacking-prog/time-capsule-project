@@ -124,4 +124,7 @@
    - В `AuthRateLimiter.extractClientIp` берётся последнее непустое значение заголовка `X-Forwarded-For` (добавляемое доверенным реверс-прокси Render), что исключает обход лимита подделкой начала заголовка клиентом; при отсутствии заголовка используется `remoteHost`.
    - При превышении 5000 ключей в карте `attempts` автоматически запускается `evictStaleEntries(now)` для удаления устаревших записей старше 60 с.
    - Лимитер подключён к `/api/v1/auth/google`, `/api/v1/capsules/join`, `PUT /api/v1/users/me/handle` и загрузке медиа в `POST /api/v1/capsules`.
+6. **R1.6 (Аудит 11): Защита от chunked-обхода `Content-Length` через `readNBytes(max + 1)`**:
+   - Чтение JSON-тел запросов переведено на `receiveJsonWithLimit` и `readBytesWithLimit(stream, maxBytes)`, использующие `InputStream.readNBytes(maxBytes + 1)`.
+   - При превышении лимита (2.5 МБ для `POST /api/v1/capsules`, 64 КБ для остальных JSON-запросов) чтение немедленно прерывается и возвращается `413 Payload Too Large` даже при отсутствии заголовка `Content-Length` (`Transfer-Encoding: chunked`).
 

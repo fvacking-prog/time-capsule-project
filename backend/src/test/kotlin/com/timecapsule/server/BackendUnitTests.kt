@@ -2164,6 +2164,50 @@ class BackendUnitTests {
         assertEquals(HttpStatusCode.OK, mediaResp.status)
         assertTrue(photoBytes.contentEquals(mediaResp.readBytes()))
     }
+
+    @Test
+    fun `readBytesWithLimit and chunked upload enforce hard byte limit via readNBytes(max + 1)`() = testApplication {
+        // 1. Direct stream test: reading 1024-byte limit from a 10MB stream stops at 1025 bytes and throws PayloadTooLargeException
+        val tenMbBytes = ByteArray(10 * 1024 * 1024) { 'A'.code.toByte() }
+        val inputStream = java.io.ByteArrayInputStream(tenMbBytes)
+        assertFailsWith<PayloadTooLargeException> {
+            readBytesWithLimit(inputStream, maxBytes = 1024)
+        }
+
+        // 2. HTTP route test without Content-Length (chunked-style OutgoingContent.WriteChannelContent) exceeding 2.5 MB -> 413 Payload Too Large
+        val testDb = Database.connect(
+            url = "jdbc:h2:mem:test_chunked_${UUID.randomUUID()};DB_CLOSE_DELAY=-1",
+            driver = "org.h2.Driver"
+        )
+        var token = ""
+        transaction(testDb) {
+            SchemaUtils.create(Users, Capsules, CapsuleStages, CapsuleParticipants, Sessions, Blocks, CapsuleMedia)
+            Users.insert {
+                it[id] = "user_chunk"
+                it[username] = "ChunkUser"
+                it[handle] = "chunk_user"
+            }
+            token = createSessionToken("user_chunk", System.currentTimeMillis())
+        }
+
+        application {
+            installSerializationAndErrors()
+            routing { capsuleRoutes() }
+        }
+
+        val oversizedChunkedBody = object : io.ktor.http.content.OutgoingContent.ReadChannelContent() {
+            override val contentType: ContentType = ContentType.Application.Json
+            override val contentLength: Long? = null // chunked / unknown Content-Length
+            override fun readFrom(): io.ktor.utils.io.ByteReadChannel =
+                io.ktor.utils.io.ByteReadChannel(ByteArray(2_700_000) { 'x'.code.toByte() })
+        }
+
+        val resp = client.post("/api/v1/capsules") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            setBody(oversizedChunkedBody)
+        }
+        assertEquals(HttpStatusCode.PayloadTooLarge, resp.status)
+    }
 }
 
 
