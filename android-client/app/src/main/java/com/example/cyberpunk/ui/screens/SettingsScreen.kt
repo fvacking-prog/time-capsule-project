@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Policy
+import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.SystemUpdate
@@ -114,6 +115,7 @@ fun SettingsScreen(
     onToggleBiometric: (Boolean) -> Unit = {},
     onToggleNotifications: (Boolean) -> Unit,
     onToggleQuietHours: (Boolean) -> Unit = {},
+    onNavigateToStats: () -> Unit = {},
     onExportData: () -> Unit,
     onOpenDeleteDataDialog: () -> Unit,
     onDismissDeleteDataDialog: () -> Unit,
@@ -595,6 +597,29 @@ fun SettingsScreen(
                         color = TokyoPrimary
                     )
                 )
+
+                // My Statistics
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigateToStats() }
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(Icons.Default.QueryStats, null, tint = TokyoSecondary, modifier = Modifier.size(22.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.home_stats_card_title),
+                            style = MaterialTheme.typography.bodyMedium.copy(color = TokyoOnBackground)
+                        )
+                        Text(
+                            text = stringResource(R.string.home_stats_card_desc),
+                            style = MaterialTheme.typography.bodySmall.copy(color = TokyoOnSurface)
+                        )
+                    }
+                    Icon(Icons.Default.ChevronRight, null, tint = TokyoOnSurface)
+                }
 
                 // Export JSON
                 Row(

@@ -76,6 +76,7 @@ import com.example.cyberpunk.ui.screens.LoginScreen
 import com.example.cyberpunk.ui.screens.RadarScreen
 import com.example.cyberpunk.ui.screens.SetPinDialog
 import com.example.cyberpunk.ui.screens.SettingsScreen
+import com.example.cyberpunk.ui.screens.StatsScreen
 import com.example.cyberpunk.ui.theme.TimeCapsuleTheme
 import com.example.cyberpunk.ui.theme.TokyoAccent
 import com.example.cyberpunk.ui.theme.TokyoBackground
@@ -94,6 +95,7 @@ private const val ROUTE_IDEAS = "ideas"
 private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_RADAR = "radar"
 private const val ROUTE_TIMELINE = "timeline"
+private const val ROUTE_STATS = "stats"
 
 class MainActivity : ComponentActivity() {
     private val capsuleViewModel: CapsuleViewModel by viewModels()
@@ -569,6 +571,9 @@ fun TimeCapsuleApp(
                     onOpenJoinDialog = capsuleViewModel::openJoinDialog,
                     onNavigateToCapsules = {
                         navController.navigate(ROUTE_CAPSULES)
+                    },
+                    onNavigateToStats = {
+                        navController.navigate(ROUTE_STATS)
                     }
                 )
             }
@@ -697,6 +702,9 @@ fun TimeCapsuleApp(
                     onToggleBiometric = capsuleViewModel::toggleBiometric,
                     onToggleNotifications = capsuleViewModel::toggleNotifications,
                     onToggleQuietHours = capsuleViewModel::toggleQuietHours,
+                    onNavigateToStats = {
+                        navController.navigate(ROUTE_STATS)
+                    },
                     onExportData = { capsuleViewModel.exportData(context) },
                     onOpenDeleteDataDialog = capsuleViewModel::openConfirmDeleteDataDialog,
                     onDismissDeleteDataDialog = capsuleViewModel::dismissConfirmDeleteDataDialog,
@@ -735,6 +743,13 @@ fun TimeCapsuleApp(
                             mime = mime
                         )
                     }
+                )
+            }
+
+            composable(ROUTE_STATS) {
+                StatsScreen(
+                    uiState = uiState,
+                    onBackClick = { navController.popBackStack() }
                 )
             }
         }

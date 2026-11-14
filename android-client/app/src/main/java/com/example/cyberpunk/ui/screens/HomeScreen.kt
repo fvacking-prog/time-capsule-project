@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -88,7 +89,8 @@ fun HomeScreen(
     onNavigateToCreate: () -> Unit,
     onNavigateToRadar: () -> Unit,
     onOpenJoinDialog: () -> Unit,
-    onNavigateToCapsules: () -> Unit
+    onNavigateToCapsules: () -> Unit,
+    onNavigateToStats: () -> Unit = {}
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     var currentTimeMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -456,6 +458,68 @@ fun HomeScreen(
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(stringResource(R.string.nav_radar))
+                }
+            }
+        }
+
+        // Карточка: Моя статистика
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onNavigateToStats() }
+                .border(1.dp, TokyoSecondary.copy(alpha = 0.25f), RoundedCornerShape(20.dp)),
+            colors = CardDefaults.cardColors(containerColor = TokyoSurface),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .background(TokyoSecondary.copy(alpha = 0.15f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.QueryStats,
+                            contentDescription = null,
+                            tint = TokyoSecondary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    Column {
+                        Text(
+                            text = stringResource(R.string.home_stats_card_title),
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = TokyoOnBackground
+                            )
+                        )
+                        Text(
+                            text = stringResource(R.string.home_stats_card_desc),
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = TokyoOnSurface
+                            )
+                        )
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = onNavigateToStats,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TokyoSecondary),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(stringResource(R.string.btn_open_stats))
                 }
             }
         }

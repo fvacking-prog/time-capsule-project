@@ -173,6 +173,27 @@
     <string name="home_quick_radar_desc">Открыть радар для поиска и чекина с друзьями на месте</string>
     <string name="home_card_join_title">Присоединиться по коду</string>
     <string name="home_card_join_desc">Введите 6-значный инвайт-код друга</string>
+    <string name="home_stats_card_title">Моя статистика</string>
+    <string name="home_stats_card_desc">Графики активности, теги и календарь будущих открытий</string>
+    <string name="btn_open_stats">Статистика</string>
+
+    <!-- Stats Screen (Функция 5) -->
+    <string name="stats_screen_title">Моя статистика</string>
+    <string name="stats_screen_subtitle">Аналитика вашей капсульной истории в стиле Tokyo Night</string>
+    <string name="stats_streak_badge">Серия активности: %1$d мес.</string>
+    <string name="stats_kpi_sealed">Запечатано</string>
+    <string name="stats_kpi_opened">Открыто</string>
+    <string name="stats_kpi_received">Получено</string>
+    <string name="stats_kpi_sent">Отправлено</string>
+    <string name="stats_heatmap_title">Тепловая карта за 6 месяцев</string>
+    <string name="stats_heatmap_subtitle">Интенсивность создания и открытия воспоминаний по неделям</string>
+    <string name="stats_monthly_title">Активность по месяцам</string>
+    <string name="stats_tags_title">Кольцо популярных тегов</string>
+    <string name="stats_tags_empty">Добавляйте #теги к капсулам, чтобы увидеть распределение тем</string>
+    <string name="stats_future_title">Линия будущих открытий</string>
+    <string name="stats_future_empty">Нет ожидающих запечатанных капсул в будущем</string>
+    <string name="stats_empty_banner">У вас пока нет капсул — создайте первое воспоминание, чтобы графики ожили!</string>
+    <string name="stats_days_remaining_format">через %1$d дн.</string>
 
     <!-- Capsules Screen («Полка воспоминаний») -->
     <string name="capsules_shelf_title">Полка воспоминаний</string>

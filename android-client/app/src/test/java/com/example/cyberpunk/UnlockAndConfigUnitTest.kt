@@ -3,7 +3,10 @@ package com.example.cyberpunk
 import com.example.cyberpunk.data.ApiConfig
 import com.example.cyberpunk.data.AppUpdateManager
 import com.example.cyberpunk.data.AppUpdatePolicy
+import com.example.cyberpunk.data.CapsuleStatsCalculator
 import com.example.cyberpunk.data.CapsuleUnlockScheduler
+import com.example.cyberpunk.ui.screens.calculateMaturationProgress
+import com.timecapsule.shared.ParticipantStatusDto
 import com.example.cyberpunk.data.ColdStartRetry
 import com.example.cyberpunk.data.GeoHelper
 import com.example.cyberpunk.data.LocationProvider
@@ -462,6 +465,147 @@ class UnlockAndConfigUnitTest {
         } finally {
             apkDir.deleteRecursively()
         }
+    }
+
+    @Test
+    fun `CapsuleStatsCalculator handles empty list and single capsule without division by zero`() {
+        val zone = ZoneId.of("UTC")
+        val now = ZonedDateTime.of(2026, 11, 14, 12, 0, 0, 0, ZoneOffset.UTC).toInstant().toEpochMilli()
+
+        val emptyStats = CapsuleStatsCalculator.compute(
+            capsules = emptyList(),
+            currentUserId = "me",
+            nowMillis = now,
+            zoneId = zone
+        )
+        assertEquals(0, emptyStats.kpi.totalCount)
+        assertEquals(0, emptyStats.kpi.sealedCount)
+        assertEquals(0, emptyStats.kpi.openedCount)
+        assertEquals(0, emptyStats.kpi.receivedCount)
+        assertEquals(0, emptyStats.kpi.sentCount)
+        assertEquals(0, emptyStats.kpi.activeMonthStreak)
+        assertEquals(6, emptyStats.monthlyBars.size)
+        assertTrue(emptyStats.monthlyBars.all { it.count == 0 && it.heightFraction == 0f })
+        assertEquals(26, emptyStats.heatmapWeeks.size)
+        assertTrue(emptyStats.tagSlices.isEmpty())
+        assertTrue(emptyStats.futureUnlocks.isEmpty())
+
+        val singleCapsule = CapsuleDto(
+            id = "cap_single",
+            title = "Single Future",
+            latitude = 0.0,
+            longitude = 0.0,
+            radiusMeters = 50.0,
+            isGroupCapsule = false,
+            isFullyUnlocked = false,
+            hasUnlockedStage = false,
+            stages = listOf(CapsuleStageDto("s1", 1, now + 86_400_000L * 5, "locked", false)),
+            participants = emptyList(),
+            creatorId = "me",
+            tags = listOf("Future"),
+            status = "SEALED",
+            createdAt = now - 3_600_000L
+        )
+        val singleStats = CapsuleStatsCalculator.compute(
+            capsules = listOf(singleCapsule),
+            currentUserId = "me",
+            nowMillis = now,
+            zoneId = zone
+        )
+        assertEquals(1, singleStats.kpi.totalCount)
+        assertEquals(1, singleStats.kpi.sealedCount)
+        assertEquals(0, singleStats.kpi.openedCount)
+        assertEquals(1, singleStats.kpi.activeMonthStreak)
+        assertEquals(1f, singleStats.monthlyBars.last().heightFraction)
+        assertEquals(1, singleStats.tagSlices.size)
+        assertEquals("#future", singleStats.tagSlices.first().tag)
+        assertEquals(100, singleStats.tagSlices.first().percentage)
+        assertEquals(1, singleStats.futureUnlocks.size)
+        assertEquals(0.5f, singleStats.futureUnlocks.first().timelinePosition)
+        assertFalse(singleStats.futureUnlocks.first().timelinePosition.isNaN())
+    }
+
+    @Test
+    fun `CapsuleStatsCalculator computes streak, monthly grouping, tag slices, and respects timezones`() {
+        val zoneUtc = ZoneId.of("UTC")
+        val zoneTokyo = ZoneId.of("Asia/Tokyo") // UTC+9
+        val now = ZonedDateTime.of(2026, 11, 14, 12, 0, 0, 0, ZoneOffset.UTC).toInstant().toEpochMilli()
+
+        // Event at 2026-10-31T20:00Z -> October in UTC, but November 1 (05:00) in Asia/Tokyo!
+        val boundaryTs = ZonedDateTime.of(2026, 10, 31, 20, 0, 0, 0, ZoneOffset.UTC).toInstant().toEpochMilli()
+        val sepTs = ZonedDateTime.of(2026, 9, 15, 10, 0, 0, 0, ZoneOffset.UTC).toInstant().toEpochMilli()
+        val novTs = ZonedDateTime.of(2026, 11, 10, 10, 0, 0, 0, ZoneOffset.UTC).toInstant().toEpochMilli()
+
+        val c1 = CapsuleDto(
+            id = "c1",
+            title = "Sep Sent",
+            latitude = 0.0,
+            longitude = 0.0,
+            radiusMeters = 50.0,
+            isGroupCapsule = false,
+            isFullyUnlocked = true,
+            hasUnlockedStage = true,
+            stages = listOf(CapsuleStageDto("s1", 1, sepTs + 60_000L, "open", true)),
+            participants = listOf(
+                ParticipantStatusDto("me", "Me", null, null, true, role = "CREATOR"),
+                ParticipantStatusDto("bob", "Bob", null, null, true, role = "RECIPIENT")
+            ),
+            creatorId = "me",
+            tags = listOf("Family", "Memory"),
+            status = "OPENED",
+            openedAt = sepTs + 120_000L,
+            createdAt = sepTs
+        )
+        val c2 = c1.copy(
+            id = "c2",
+            title = "Boundary Capsule",
+            creatorId = "alice",
+            isInbox = true,
+            tags = listOf("family", "travel"),
+            createdAt = boundaryTs,
+            openedAt = boundaryTs + 60_000L
+        )
+        val c3 = c1.copy(
+            id = "c3",
+            title = "Nov Sealed",
+            isFullyUnlocked = false,
+            hasUnlockedStage = false,
+            status = "SEALED",
+            openedAt = null,
+            tags = listOf("family"),
+            createdAt = novTs,
+            stages = listOf(CapsuleStageDto("s3", 1, now + 86_400_000L * 10, "locked", false))
+        )
+
+        // In UTC: Sep (1), Oct (1), Nov (1) -> 3 consecutive months streak!
+        val statsUtc = CapsuleStatsCalculator.compute(
+            capsules = listOf(c1, c2, c3),
+            currentUserId = "me",
+            nowMillis = now,
+            zoneId = zoneUtc
+        )
+        assertEquals(3, statsUtc.kpi.activeMonthStreak)
+        assertEquals(1, statsUtc.kpi.sealedCount)
+        assertEquals(2, statsUtc.kpi.openedCount)
+        assertEquals(1, statsUtc.kpi.receivedCount)
+        assertEquals(2, statsUtc.kpi.sentCount)
+        assertEquals("#family", statsUtc.tagSlices.first().tag)
+        assertEquals(3, statsUtc.tagSlices.first().count)
+
+        // In Asia/Tokyo (UTC+9): boundaryTs moves to Nov 1, so Oct has 0 capsules -> streak is 1 (only Nov)!
+        val statsTokyo = CapsuleStatsCalculator.compute(
+            capsules = listOf(c1, c2, c3),
+            currentUserId = "me",
+            nowMillis = now,
+            zoneId = zoneTokyo
+        )
+        assertEquals(1, statsTokyo.kpi.activeMonthStreak)
+        assertEquals(2, statsTokyo.monthlyBars.last().count) // Nov has c2 + c3 in Tokyo timezone
+
+        // Maturation progress helper checks
+        assertEquals(0.5f, calculateMaturationProgress(1000L, 3000L, 2000L), 1e-4f)
+        assertEquals(1.0f, calculateMaturationProgress(1000L, 3000L, 4000L), 1e-4f)
+        assertFalse(calculateMaturationProgress(0L, 3000L, 2000L).isNaN())
     }
 }
 
