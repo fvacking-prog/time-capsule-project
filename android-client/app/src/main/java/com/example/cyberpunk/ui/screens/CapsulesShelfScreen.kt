@@ -274,7 +274,6 @@ fun CapsulesShelfScreen(
                             onCodeCopied = onCodeCopied,
                             onOpenCapsule = {
                                 onOpenCapsule(capsule.id)
-                                onOpenTimeline(capsule.id)
                             },
                             onOpenTimeline = { onOpenTimeline(capsule.id) },
                             onOpenRadar = { onOpenRadar(capsule.id) },
@@ -627,8 +626,8 @@ private fun ShelfCapsuleCard(
                 }
             }
 
-            // Geo Capsule: Invite Code Chip
-            if (!capsule.inviteCode.isNullOrBlank()) {
+            // Group Capsule: Invite Code Chip
+            if (capsule.isGroupCapsule && !capsule.inviteCode.isNullOrBlank()) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)

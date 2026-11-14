@@ -267,4 +267,11 @@ class VoicePlayerHelper {
 
     fun currentPosition(): Int = player?.currentPosition ?: 0
     fun duration(): Int = player?.duration ?: 0
+
+    fun seekTo(positionMs: Int) {
+        try {
+            player?.seekTo(positionMs.coerceAtLeast(0))
+        } catch (_: Exception) {
+        }
+    }
 }

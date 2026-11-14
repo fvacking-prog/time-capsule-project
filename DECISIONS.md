@@ -140,4 +140,10 @@
    - При конфликте уникальности `@handle` в `updateUserHandle` возвращается `409 Conflict` с текстом `"Этот @ник уже занят"`.
    - Подключён плагин `CallLogging` (логирует только метод, путь и HTTP-статус без заголовков и тел) и логирование стектрейса необработанных ошибок в `StatusPages` (`exception<Throwable>`).
    - Добавлен легковесный публичный `GET /ping` (`"ok"` без обращения к БД), а `/health` сохранён с проверкой соединения БД. Корневой `Dockerfile` унифицирован с `backend/Dockerfile` (`eclipse-temurin:21-jre-jammy`, непривилегированный `appuser`, `HEALTHCHECK`, `-XX:MaxRAMPercentage=75.0`).
+10. **R1.10 (Аудит 4, 14, 17, 19, 29): Клиентские исправления навигации, медиаплеера и шаблонов**:
+    - Устранён повторный вызов `onOpenTimeline` при открытии капсулы с полки (`CapsulesShelfScreen.kt:275`).
+    - В `PhotoMediaCard` и `VoiceMediaCard` добавлен `retryTrigger` в ключ `LaunchedEffect(mediaItem.id, retryTrigger)` для реального перезапуска загрузки по кнопке «Повторить»; в `VoicePlayerHelper` и `VoiceMediaCard` активирована перемотка `Slider` (`seekTo`).
+    - В `signInWithGoogle` удалён дублирующийся вызов `remoteRepository.authGoogle` в блоке `catch`.
+    - На полке капсул (`CapsulesShelfScreen.kt`) чип кода приглашения отображается только для групповых капсул (`capsule.isGroupCapsule`).
+    - В `IdeasScreen.kt` разблокированы шаблоны `photo_archive` (`kind = "PHOTO"`) и `voice_2026` (`kind = "VOICE"`), удалён мёртвый экран `MyCapsulesScreen.kt` (`ROUTE_MY_CAPSULES`) и неиспользуемые методы в `CapsuleViewModel`.
 

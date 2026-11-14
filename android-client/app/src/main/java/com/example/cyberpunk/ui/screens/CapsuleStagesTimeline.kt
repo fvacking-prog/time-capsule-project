@@ -215,8 +215,9 @@ private fun PhotoMediaCard(
     var isLoading by remember { mutableStateOf(true) }
     var hasError by remember { mutableStateOf(false) }
     var showFullscreen by remember { mutableStateOf(false) }
+    var retryTrigger by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(mediaItem.id) {
+    LaunchedEffect(mediaItem.id, retryTrigger) {
         isLoading = true
         hasError = false
         val downloaded = onDownloadMedia(mediaItem.id, mediaItem.mime)
@@ -268,6 +269,7 @@ private fun PhotoMediaCard(
                 IconButton(onClick = {
                     isLoading = true
                     hasError = false
+                    retryTrigger++
                 }) {
                     Icon(Icons.Default.Refresh, null, tint = TokyoPrimary, modifier = Modifier.size(18.dp))
                 }
@@ -339,6 +341,7 @@ private fun VoiceMediaCard(
     var file by remember { mutableStateOf<File?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var hasError by remember { mutableStateOf(false) }
+    var retryTrigger by remember { mutableIntStateOf(0) }
 
     val player = remember { VoicePlayerHelper() }
     var isPlaying by remember { mutableStateOf(false) }
@@ -351,7 +354,7 @@ private fun VoiceMediaCard(
         }
     }
 
-    LaunchedEffect(mediaItem.id) {
+    LaunchedEffect(mediaItem.id, retryTrigger) {
         isLoading = true
         hasError = false
         val downloaded = onDownloadMedia(mediaItem.id, mediaItem.mime)
@@ -414,6 +417,7 @@ private fun VoiceMediaCard(
                 IconButton(onClick = {
                     isLoading = true
                     hasError = false
+                    retryTrigger++
                 }) {
                     Icon(Icons.Default.Refresh, null, tint = TokyoSecondary, modifier = Modifier.size(18.dp))
                 }
@@ -450,16 +454,28 @@ private fun VoiceMediaCard(
                     )
                 }
 
+                val effectiveDurationMs = if (totalDurationMs > 0) {
+                    totalDurationMs
+                } else {
+                    mediaItem.durationMs?.toInt()?.takeIf { it > 0 } ?: 1000
+                }
                 val curSec = currentPosMs / 1000
-                val totSec = (if (totalDurationMs > 0) totalDurationMs else (mediaItem.durationMs?.toInt() ?: 1000)) / 1000
-                val progress = if (totSec > 0) (curSec.toFloat() / totSec.toFloat()).coerceIn(0f, 1f) else 0f
+                val totSec = (effectiveDurationMs / 1000).coerceAtLeast(1)
+                val progress = (currentPosMs.toFloat() / effectiveDurationMs.toFloat()).coerceIn(0f, 1f)
 
                 Column(modifier = Modifier.weight(1f)) {
                     Slider(
                         value = progress,
-                        onValueChange = {},
-                        enabled = false,
+                        onValueChange = { fraction ->
+                            val targetMs = (fraction.coerceIn(0f, 1f) * effectiveDurationMs).toInt()
+                            currentPosMs = targetMs
+                            player.seekTo(targetMs)
+                        },
+                        enabled = true,
                         colors = SliderDefaults.colors(
+                            thumbColor = TokyoSecondary,
+                            activeTrackColor = TokyoSecondary,
+                            inactiveTrackColor = TokyoSecondary.copy(alpha = 0.25f),
                             disabledThumbColor = TokyoSecondary,
                             disabledActiveTrackColor = TokyoSecondary,
                             disabledInactiveTrackColor = TokyoSecondary.copy(alpha = 0.25f)

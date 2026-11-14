@@ -334,15 +334,7 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             _uiState.update { it.copy(isAuthenticating = true) }
             try {
-                val authResponse = try {
-                    remoteRepository.authGoogle(idToken)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    val reason = e.localizedMessage ?: e.javaClass.simpleName
-                    _snackbarEvents.tryEmit(appContext.getString(R.string.auth_error_network, reason))
-                    remoteRepository.authGoogle(idToken)
-                }
+                val authResponse = remoteRepository.authGoogle(idToken)
 
                 ApiConfig.saveSession(appContext, authResponse.user, authResponse.sessionToken)
 
@@ -1083,12 +1075,20 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
         return true
     }
 
-    fun applyTemplate(title: String, prompt: String, tags: List<String>, daysAhead: Long, onNavigateToCreate: () -> Unit) {
+    fun applyTemplate(
+        title: String,
+        prompt: String,
+        tags: List<String>,
+        daysAhead: Long,
+        kind: String = "MESSAGE",
+        onNavigateToCreate: () -> Unit
+    ) {
         val dateMillis = UnlockDateTimeHelper.defaultUnlockMillis(daysAhead = daysAhead)
         _uiState.update { state ->
             state.copy(
                 createForm = state.createForm.copy(
                     title = title,
+                    kind = kind,
                     messageText = prompt,
                     tags = tags.joinToString(", "),
                     unlockDateMillis = dateMillis,
@@ -1174,10 +1174,6 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
 
     fun dismissLocationDisabledDialog() {
         _uiState.update { it.copy(showLocationDisabledDialog = false) }
-    }
-
-    fun onLocationPermissionDenied() {
-        _snackbarEvents.tryEmit(appContext.getString(R.string.location_permission_denied_snackbar))
     }
 
     fun updateCreateRadius(radius: Float) {
@@ -1276,17 +1272,6 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
                     attachedVoiceDurationMs = null,
                     isRecordingVoice = false,
                     voiceRecordingSeconds = 0
-                )
-            )
-        }
-    }
-
-    fun updateVoiceRecordingState(isRecording: Boolean, seconds: Int = 0) {
-        _uiState.update {
-            it.copy(
-                createForm = it.createForm.copy(
-                    isRecordingVoice = isRecording,
-                    voiceRecordingSeconds = seconds
                 )
             )
         }
@@ -1442,10 +1427,6 @@ class CapsuleViewModel(application: Application) : AndroidViewModel(application)
 
     fun dismissSetPinDialog() {
         _uiState.update { it.copy(showSetPinDialog = false, pinError = null) }
-    }
-
-    fun openPinPromptDialog() {
-        _uiState.update { it.copy(showPinPromptDialog = true, pinError = null) }
     }
 
     fun setupPin(pin: String) {

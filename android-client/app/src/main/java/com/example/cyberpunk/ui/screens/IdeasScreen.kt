@@ -60,6 +60,7 @@ data class CapsuleIdeaTemplate(
     val promptText: String,
     val tags: List<String>,
     val daysAhead: Long,
+    val kind: String = "MESSAGE",
     val isComingSoon: Boolean = false
 )
 
@@ -129,28 +130,30 @@ private val IDEAS_CATALOG = listOf(
         titleRes = R.string.idea_photo_archive_title,
         descRes = R.string.idea_photo_archive_desc,
         icon = Icons.Default.PhotoCamera,
-        iconTint = TokyoOnSurface,
-        promptText = "",
-        tags = listOf("фото", "молодость"),
+        iconTint = TokyoAccent,
+        promptText = "Этот кадр хранит атмосферу сегодняшнего дня. Когда откроешь капсулу, вспомни, где и с кем был сделан этот снимок...",
+        tags = listOf("фото", "молодость", "момент"),
         daysAhead = 365L,
-        isComingSoon = true
+        kind = "PHOTO",
+        isComingSoon = false
     ),
     CapsuleIdeaTemplate(
         id = "voice_2026",
         titleRes = R.string.idea_voice_2026_title,
         descRes = R.string.idea_voice_2026_desc,
         icon = Icons.Default.Mic,
-        iconTint = TokyoOnSurface,
-        promptText = "",
-        tags = listOf("голос", "аудио"),
+        iconTint = TokyoSecondary,
+        promptText = "Голосовое послание в будущее. Послушай живой тембр своего голоса и эмоции этого момента спустя время...",
+        tags = listOf("голос", "аудио", "эмоции"),
         daysAhead = 365L,
-        isComingSoon = true
+        kind = "VOICE",
+        isComingSoon = false
     )
 )
 
 @Composable
 fun IdeasScreen(
-    onSelectTemplate: (title: String, prompt: String, tags: List<String>, daysAhead: Long) -> Unit
+    onSelectTemplate: (title: String, prompt: String, tags: List<String>, daysAhead: Long, kind: String) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -199,7 +202,7 @@ fun IdeasScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable(enabled = !template.isComingSoon) {
-                            onSelectTemplate(title, template.promptText, template.tags, template.daysAhead)
+                            onSelectTemplate(title, template.promptText, template.tags, template.daysAhead, template.kind)
                         }
                         .border(
                             1.dp,

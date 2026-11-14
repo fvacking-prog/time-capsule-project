@@ -71,7 +71,6 @@ import com.example.cyberpunk.ui.screens.EnterPinDialog
 import com.example.cyberpunk.ui.screens.HomeScreen
 import com.example.cyberpunk.ui.screens.IdeasScreen
 import com.example.cyberpunk.ui.screens.LoginScreen
-import com.example.cyberpunk.ui.screens.MyCapsulesScreen
 import com.example.cyberpunk.ui.screens.RadarScreen
 import com.example.cyberpunk.ui.screens.SetPinDialog
 import com.example.cyberpunk.ui.screens.SettingsScreen
@@ -91,7 +90,6 @@ private const val ROUTE_IDEAS = "ideas"
 private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_RADAR = "radar"
 private const val ROUTE_TIMELINE = "timeline"
-private const val ROUTE_MY_CAPSULES = "my_capsules"
 
 class MainActivity : ComponentActivity() {
     private val capsuleViewModel: CapsuleViewModel by viewModels()
@@ -328,7 +326,7 @@ fun TimeCapsuleApp(
 
                 // 2. Капсулы
                 NavigationBarItem(
-                    selected = currentRoute == ROUTE_CAPSULES || currentRoute == ROUTE_MY_CAPSULES,
+                    selected = currentRoute == ROUTE_CAPSULES,
                     onClick = {
                         navController.navigate(ROUTE_CAPSULES) {
                             popUpTo(navController.graph.findStartDestination().id) {
@@ -518,38 +516,6 @@ fun TimeCapsuleApp(
                 )
             }
 
-            composable(ROUTE_MY_CAPSULES) {
-                MyCapsulesScreen(
-                    uiState = uiState,
-                    onRefresh = { capsuleViewModel.loadCapsules(isPullToRefresh = true) },
-                    onOpenJoinDialog = capsuleViewModel::openJoinDialog,
-                    onCodeCopied = capsuleViewModel::notifyInviteCodeCopied,
-                    onSelectCapsule = capsuleViewModel::selectCapsule,
-                    onOpenRadar = { capsuleId ->
-                        capsuleViewModel.selectCapsule(capsuleId)
-                        navController.navigate(ROUTE_RADAR)
-                    },
-                    onOpenTimeline = { capsuleId ->
-                        capsuleViewModel.selectCapsule(capsuleId)
-                        navController.navigate(ROUTE_TIMELINE)
-                    },
-                    onNavigateToCreate = {
-                        navController.navigate(ROUTE_CREATE)
-                    },
-                    onSearchQueryChange = capsuleViewModel::setSearchQuery,
-                    onTabSelected = capsuleViewModel::setSelectedTab,
-                    onOpenCapsule = { id ->
-                        capsuleViewModel.selectCapsule(id)
-                        capsuleViewModel.openCapsule(id) {
-                            navController.navigate(ROUTE_TIMELINE)
-                        }
-                    },
-                    onArchiveCapsule = capsuleViewModel::archiveCapsule,
-                    onUnarchiveCapsule = capsuleViewModel::unarchiveCapsule,
-                    onBlockSender = capsuleViewModel::blockSender
-                )
-            }
-
             composable(ROUTE_CREATE) {
                 CreateCapsuleScreen(
                     formState = uiState.createForm,
@@ -620,8 +586,8 @@ fun TimeCapsuleApp(
 
             composable(ROUTE_IDEAS) {
                 IdeasScreen(
-                    onSelectTemplate = { title, prompt, tags, daysAhead ->
-                        capsuleViewModel.applyTemplate(title, prompt, tags, daysAhead) {
+                    onSelectTemplate = { title, prompt, tags, daysAhead, kind ->
+                        capsuleViewModel.applyTemplate(title, prompt, tags, daysAhead, kind) {
                             navController.navigate(ROUTE_CREATE) {
                                 popUpTo(navController.graph.findStartDestination().id) {
                                     saveState = true
